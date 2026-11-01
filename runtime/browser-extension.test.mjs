@@ -5,7 +5,7 @@ test('扩展按客户端会话复用网页，切换旧会话恢复原标签',asy
  const context=vm.createContext({chrome,console,WebSocket:class{static OPEN=1},setTimeout:()=>0,clearTimeout:()=>{},setInterval:()=>0,Date,JSON});vm.runInContext(await fs.readFile(new URL('../browser-plugin/background.js',import.meta.url),'utf8'),context);await new Promise(r=>setTimeout(r,10));vm.runInContext('socket={readyState:1,send:()=>{}}',context);
  const command=(operation,data)=>vm.runInContext('command('+JSON.stringify(operation)+','+JSON.stringify(data)+')',context);
  await command('open',{provider:'chatgpt',sessionId:'A'});
- for(const text of ['第一条','第二条']){await command('send',{text,sessionId:'A'});await vm.runInContext('poll()',context);vm.runInContext('job.changed-=4000',context);await vm.runInContext('poll()',context)}
+ for(const [index,text] of ['第一条','第二条'].entries()){const requestId=`test-request-${index}`;await command('send',{text,sessionId:'A',requestId,replyVia:'mcp'});await vm.runInContext('poll()',context);await command('reply.received',{requestId});}
  assert.equal(created,1);assert.equal(sent.length,2);assert.equal(sent[0].id,sent[1].id);
  await command('open',{provider:'chatgpt',sessionId:'A'});assert.equal(created,1);
  await command('activate',{sessionId:'B'});await command('open',{provider:'chatgpt',sessionId:'B'});assert.equal(created,2);
