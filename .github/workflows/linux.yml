@@ -54,7 +54,7 @@ jobs:
           node scripts/test-workbench-ui.mjs
       - name: Verify source and packaged Electron desktop on X11
         run: |
-          xvfb-run -a sh -c 'openbox >/tmp/nexus-openbox.log 2>&1 & node scripts/test-linux-desktop.mjs && NEXUS_DESKTOP_EXECUTABLE="$PWD/release/linux-unpacked/nexusmcp-studio" node scripts/test-linux-desktop.mjs'
+          xvfb-run -a sh -c 'openbox >/tmp/nexus-openbox.log 2>&1 & node scripts/test-linux-desktop.mjs && NEXUS_DESKTOP_EXECUTABLE="$PWD/release/linux-unpacked/nexusmcp-studio" node scripts/test-linux-desktop.mjs && node scripts/test-embedded-webchat.mjs'
         env:
           XDG_SESSION_TYPE: x11
           NEXUS_TEST_NO_SANDBOX: '1'

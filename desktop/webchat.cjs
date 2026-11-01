@@ -56,7 +56,7 @@ class WebChat{
     wc.on('will-navigate',(event,next)=>{if(!/^https?:\/\//i.test(next))event.preventDefault()});
     const key=this.key();const navigated=()=>{this.saveURL(key,wc.getURL());this.changed()};
     wc.on('did-navigate',navigated);wc.on('did-navigate-in-page',navigated);
-    wc.on('render-process-gone',()=>{this.status='网页进程已退出，请刷新网页';if(this.job){this.job=null;this.emit('agent.status',{phase:'idle'})}this.changed()});
+    wc.on('render-process-gone',()=>{this.status='网页进程已退出，请刷新网页';if(this.job){this.emit('webchat.failed',{requestId:this.job.requestId,sessionId:this.job.sessionId,error:this.status});this.job=null;this.emit('agent.status',{phase:'idle'})}this.changed()});
     await wc.loadURL(url||this.savedURLs[key]||definition.url);
    }else if(url)await view.webContents.loadURL(url);
    if(wasVisible&&rect)this.show(rect);
@@ -88,7 +88,7 @@ class WebChat{
   if(!this.page())throw new Error('请先打开内置 AI 浏览器并完成登录');
   if(data.sessionId&&data.sessionId!==this.sessionId)await this.open(this.provider,undefined,data.sessionId);
   if(!data.requestId||data.replyVia!=='mcp')throw new Error('客户端消息缺少 MCP 回复标识，请更新客户端');
-  const before=await this.inspect('status');if(!before.ready)throw new Error('请先打开内置浏览器，完成网站登录后再发送');
+  const before=await this.inspect('status');if(before.busy)throw new Error('网页仍在生成，请等待或停止后再发送');if(!before.ready)throw new Error('请先打开内置浏览器，完成网站登录后再发送');
   const id=data.requestId,job={id,requestId:data.requestId,sessionId:data.sessionId,started:Date.now(),sending:true,tracker:new NexusTurnTracker({requestId:data.requestId,sessionId:data.sessionId,provider:this.provider,baseline:before})};
   this.job=job;this.emit('agent.status',{phase:'executing'});this.changed();
   try{
@@ -101,15 +101,16 @@ class WebChat{
   return {id};
  }
  async stop(){
-  if(!this.job)return;
+  if(!this.job&&!this.pageBusy)return;
   const result=await this.inspect('stop');
   if(!result.stopped&&result.busy)throw new Error('网页仍在生成，未找到停止按钮，请打开网页手动停止');
-  if(!result.stopped&&this.job.sending)throw new Error('消息仍在提交，请稍后再停止');
+  if(!result.stopped&&this.job?.sending)throw new Error('消息仍在提交，请稍后再停止');
   this.job=null;this.emit('agent.status',{phase:'idle'});this.changed();
  }
  async poll(){
   if(this.polling||this.opening||!this.pages.size||this.window.isDestroyed()||this.disposed)return;this.polling=true;
   try{const key=this.key();const snapshot=await this.inspect('status');if(key!==this.key())return;this.ready=!!snapshot.ready;this.pageBusy=!!snapshot.busy;
+   if(this.job&&Date.now()-this.job.started>10*60*1000){this.emit('webchat.failed',{requestId:this.job.requestId,sessionId:this.job.sessionId,error:'等待网页回复超时，请检查网页后重试'});this.job=null;this.emit('agent.status',{phase:'idle'});}
    if(this.job){const completed=!this.job.sending&&this.job.tracker.observe(snapshot);if(completed){this.emit('webchat.reply',completed);this.status='网页已生成完，正在同步回复'}else this.status=snapshot.busy?'网页正在生成回复':snapshot.replyForRequestId===this.job.requestId?'正在确认回复完成':'等待网页回复或 MCP 回传';}
    else this.status=snapshot.problem||(snapshot.ready?'网页已就绪':'请在内置浏览器中完成登录');this.changed()}
   catch(e){this.status=e.message;this.changed()}finally{this.polling=false}

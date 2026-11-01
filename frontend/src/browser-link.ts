@@ -40,11 +40,12 @@ export function useBrowserLink(sessionId:string):BrowserLink {
   else if(external&&extensionConnected===false){label='浏览器扩展未连接';detail='复制连接地址，在 Edge / Chrome 扩展中连接客户端。';}
   else if(external&&extensionConnected===null){label='正在检查扩展';detail='正在确认浏览器扩展的连接状态。';}
   else if(bound&&webchat.busy){label=webchat.replyMode==='mcp'?webchat.status:'AI 正在回复';detail=webchat.replyMode==='mcp'?'正在接收本轮回复；网页生成结束后会自动确认，MCP 回传可优先同步。':'当前聊天正在接收网页回复。';}
+  else if(bound&&webchat.pageBusy){label='等待网页结束生成';detail='回复已回传，网页仍在生成。可以等待或点击停止后继续发送。';}
   else if(bound&&needsLogin){label='请完成网页登录';detail=webchat.status||'请在浏览器中完成登录，再回到这里发送消息。';}
   else if(bound&&webpageProblem){label='网页需要处理';detail=webchat.status;}
   else if(bound&&!ready){label='正在检查当前网页';detail='正在确认当前聊天对应的网页是否可用。';}
   else if(bound){label='可以开始聊天';detail='会继续使用这条聊天对应的网页对话。';}
-  return {external,runtimeConnected:connected,extensionConnected,bound,needsLogin,busy:webchat.busy,
-    canSend:connected&&(!external||extensionConnected===true)&&bound&&ready&&!needsLogin&&!webpageProblem&&!webchat.busy,
+  return {external,runtimeConnected:connected,extensionConnected,bound,needsLogin,busy:webchat.busy||!!webchat.pageBusy,
+    canSend:connected&&(!external||extensionConnected===true)&&bound&&ready&&!needsLogin&&!webpageProblem&&!webchat.busy&&!webchat.pageBusy,
     label,detail,bridgeURL:bridge?.url||'',refresh};
 }

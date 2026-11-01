@@ -29,7 +29,7 @@ export function ConversationWorkbench({onOpenModel,onConnect,browserSuspended=fa
   const followEnd=useRef(true);const composerWrap=useRef<HTMLDivElement>(null);
   const [inputHeight,setInputHeight]=useState(71);
   const browserLink=useBrowserLink(session.id);const[openingPage,setOpeningPage]=useState(false);
-  const isApi=session.modelMode==='api';const apiProfile=s.apiModels.find(model=>model.id===session.apiProfileId);const apiState=s.apiChats[session.id];const responding=isApi?!!apiState?.busy:s.webchat.busy;const canSend=isApi?s.connected&&!!apiProfile&&!responding:browserLink.canSend;
+  const isApi=session.modelMode==='api';const apiProfile=s.apiModels.find(model=>model.id===session.apiProfileId);const apiState=s.apiChats[session.id];const responding=isApi?!!apiState?.busy:browserLink.busy;const canSend=isApi?s.connected&&!!apiProfile&&!responding:browserLink.canSend;
   const updateText=(value:string)=>{setText(value);u.updateSessionId(session.id,{draft:value});};
   const aiName=aiSites.find(site=>site.id===s.webchat.provider)?.name||'AI';
   useEffect(()=>{if(s.webchat.sessionId===session.id&&s.webchat.provider&&session.modelMode==='mcp')u.updateSessionId(session.id,{mcpProvider:s.webchat.provider});},[s.webchat.provider,s.webchat.sessionId,session.id]);

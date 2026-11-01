@@ -100,7 +100,7 @@ async function command(operation, data = {}) {
     return { sent: true, replyMode: 'mcp', requestId: data.requestId };
   }
   if (operation === 'stop') {
-    if (job) { const result = await inspect('stop'); if (!result.stopped && result.busy) throw new Error('网页未停止，请在浏览器中手动停止'); job = null; await save(); event('agent.status', { phase: 'idle' }); changed(); }
+    if (job || pageBusy) { const result = await inspect('stop'); if (!result.stopped && result.busy) throw new Error('网页未停止，请在浏览器中手动停止'); job = null; pageBusy=!!result.busy;await save(); event('agent.status', { phase: 'idle' }); changed(); }
     return { ok: true };
   }
   throw new Error('普通浏览器模式请在浏览器内导航和刷新');
