@@ -40,7 +40,7 @@ jobs:
           Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile 'preserved-mcp/bin/cloudflared.exe'
           if ((Get-Item 'preserved-mcp/bin/cloudflared.exe').Length -lt 1000000) { throw 'cloudflared download failed or incomplete' }
       - name: Build desktop installer
-        run: npm run dist
+        run: npm run dist -- --publish never
       - name: Save Windows installer
         uses: actions/upload-artifact@v4
         with:
