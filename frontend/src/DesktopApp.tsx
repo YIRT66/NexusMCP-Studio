@@ -73,6 +73,7 @@ export function App() {
   const moreActive = page !== 'chat' && page !== 'tools';
 
   return <div className="plain-app client-app desktop-shell">
+    {import.meta.env.VITE_WEB_PREVIEW === 'true' && <div className="mobile-preview-banner" role="status">网页版预览 · 只展示界面，电脑控制及 MCP 功能不可用</div>}
     <header className="shell-titlebar">
       <button className="shell-sidebar-toggle" aria-label="切换侧边栏" title="切换侧边栏" aria-expanded={sidebar} onClick={() => setSidebar(!sidebar)}><PanelLeft size={16} /></button>
       <button className={'mcp-launch-trigger '+(s.service.phase==='running'?'running':'')} onClick={()=>setMcpOpen(true)} aria-label="启动 MCP 服务">{s.service.phase==='starting'?<LoaderCircle size={13} className="spin"/>:<Plug size={13}/>}<span>{s.service.phase==='running'?'MCP 服务已启动':s.service.phase==='starting'?'MCP 正在启动':'启动 MCP 服务'}</span></button>

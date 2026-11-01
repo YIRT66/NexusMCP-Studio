@@ -1,0 +1,50 @@
+name: Build Windows desktop (EXE)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-windows:
+    name: Windows x64 installer
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+      - name: Install app dependencies
+        run: npm ci
+      - name: Install packaged MCP service dependencies
+        run: npm ci --prefix preserved-mcp
+      - name: Check TypeScript
+        run: npm run typecheck
+      - name: Check standalone browser bridge tests
+        run: node --test runtime/browser-extension.test.mjs runtime/webchat-relay.test.mjs
+      - name: Bundle Windows Node.js and cloudflared for the local service
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path preserved-mcp/runtime -Force | Out-Null
+          New-Item -ItemType Directory -Path preserved-mcp/bin -Force | Out-Null
+          Copy-Item (Get-Command node).Source preserved-mcp/runtime/node.exe
+          Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile 'preserved-mcp/bin/cloudflared.exe'
+          if ((Get-Item 'preserved-mcp/bin/cloudflared.exe').Length -lt 1000000) { throw 'cloudflared download failed or incomplete' }
+      - name: Build desktop installer
+        run: npm run dist
+      - name: Save Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexusMCP-Studio-Windows-x64
+          path: release/NexusMCP-Studio-Setup.exe
+          if-no-files-found: error
+          retention-days: 14
