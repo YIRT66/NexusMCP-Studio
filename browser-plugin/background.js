@@ -4,7 +4,7 @@ const debugControllers=new Map();
 async function debugCurrent(data){const target=await tab();const controller=debugControllers.get(target.id);if(!controller)throw new Error('请在浏览器扩展中点击「开启网页调试」，授权后可读取控制台及注入脚本');return controller.dispatch(data);}
 async function enableDebug(){
  const target=await tab();if(debugControllers.has(target.id))return {ok:true};
- if(!await chrome.permissions.contains({permissions:['debugger']}))throw new Error('请先在扩展弹窗中授权网页调试');
+ if(!await chrome.permissions.contains({permissions:['debugger']}))throw new Error('请重新加载新版扩展以启用网页调试权限');
  await chrome.debugger.attach({tabId:target.id},'1.3');
  const controller=new globalThis.NexusDebugController((method,params)=>chrome.debugger.sendCommand({tabId:target.id},method,params));
  debugControllers.set(target.id,controller);try{await controller.enable();}catch(error){debugControllers.delete(target.id);await chrome.debugger.detach({tabId:target.id});throw error;}return {ok:true};

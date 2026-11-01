@@ -85,6 +85,13 @@ try {
   await popup.locator('#open-binding').waitFor();
   await popup.locator('#open-binding').click();
   await popup.locator('#connection-settings > summary').evaluate(element => { element.parentElement.open = true; });
+  await popup.locator('#debug-enable').click();
+  await popup.locator('#notice-text').filter({hasText:'当前绑定网页已开启调试'}).waitFor();
+  const debugRun=await api('/tools/call',{name:'browser_console_control',args:{target:'chat',operation:'execute',code:'window.extensionDebugFixture=42;console.log("extension-debug-fixture");extensionDebugFixture'}});
+  assert.ok(!debugRun.isError,JSON.stringify(debugRun));assert.equal(JSON.parse(debugRun.content[0].text).value,42);
+  const debugLog=await api('/tools/call',{name:'browser_console_read',args:{target:'chat'}});assert.ok(JSON.parse(debugLog.content[0].text).entries.some(entry=>entry.values.includes('extension-debug-fixture')));
+  const css=await api('/tools/call',{name:'browser_inject',args:{target:'chat',kind:'css',code:'body { background:rgb(4,5,6) }'}});assert.ok(!css.isError,JSON.stringify(css));
+  await popup.locator('#debug-disable').click();await popup.locator('#notice-text').filter({hasText:'网页调试已关闭'}).waitFor();
   await popup.locator('#disconnect').click();
   await popup.locator('#connection').filter({ hasText: '未连接' }).waitFor();
   await until(async () => !(await api('/webchat/bridge')).connected);

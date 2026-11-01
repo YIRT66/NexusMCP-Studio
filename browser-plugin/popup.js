@@ -143,8 +143,5 @@ const timer = setInterval(refresh, 1500);
 window.addEventListener('pagehide', () => clearInterval(timer), { once: true });
 
 element('bind-active').addEventListener('click',async()=>{try{const result=await chrome.runtime.sendMessage({type:'nexus.bind-active'});if(!result||result.error)throw new Error(result?.error||'绑定失败');notice();await refresh();}catch(error){notice(error.message);}});
-element('debug-enable').addEventListener('click',()=>{
- const permission=chrome.permissions.request({permissions:['debugger']});
- void permission.then(async granted=>{if(!granted)throw new Error('尚未授权网页调试');const result=await chrome.runtime.sendMessage({type:'nexus.debug-enable'});if(result?.error)throw new Error(result.error);notice('当前绑定网页已开启调试。浏览器提示条关闭后，调试会断开。');}).catch(error=>notice(error.message));
-});
+element('debug-enable').addEventListener('click',async()=>{try{const result=await chrome.runtime.sendMessage({type:'nexus.debug-enable'});if(result?.error)throw new Error(result.error);notice('当前绑定网页已开启调试。浏览器提示条关闭后，调试会断开。');}catch(error){notice(error.message);}});
 element('debug-disable').addEventListener('click',async()=>{try{const result=await chrome.runtime.sendMessage({type:'nexus.debug-disable'});if(result?.error)throw new Error(result.error);notice('网页调试已关闭');}catch(error){notice(error.message);}});

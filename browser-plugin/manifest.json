@@ -7,7 +7,8 @@
     "activeTab",
     "tabs",
     "storage",
-    "scripting"
+    "scripting",
+    "debugger"
   ],
   "background": {
     "service_worker": "background.js"
@@ -51,8 +52,5 @@
     "https://www.doubao.com/*",
     "https://www.kimi.ai/*",
     "https://kimi.ai/*"
-  ],
-  "optional_permissions": [
-    "debugger"
   ]
 }
