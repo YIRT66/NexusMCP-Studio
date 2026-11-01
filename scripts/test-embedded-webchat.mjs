@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import {promises as fs} from 'node:fs';
+import {createServer} from 'node:http';
+import {createRequire} from 'node:module';
+import {fileURLToPath} from 'node:url';
+import path from 'node:path';
+import os from 'node:os';
+import {_electron} from 'playwright-core';
+import {startFixture} from '../runtime/webchat-fixture.mjs';
+const require=createRequire(import.meta.url),root=fileURLToPath(new URL('../',import.meta.url)),directory=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-embedded-')),fixture=await startFixture();
+const wrapper=createServer((_req,res)=>{res.setHeader('content-type','text/html');res.end(`<iframe src="${fixture.url}/chatgpt" style="width:900px;height:700px"></iframe>`);});await new Promise(resolve=>wrapper.listen(0,'127.0.0.1',resolve));
+let app;
+try{
+ const env={...process.env,NEXUS_TEST_USER_DATA:directory,MCP_NO_TUNNEL:'1'};delete env.ELECTRON_RUN_AS_NODE;
+ app=await _electron.launch({executablePath:require('electron'),args:[root,...(process.env.NEXUS_TEST_NO_SANDBOX==='1'?['--no-sandbox']:[])],cwd:os.tmpdir(),env,timeout:30000});
+ const page=await app.firstWindow();await page.locator('.desktop-shell').waitFor();const base=await page.evaluate(()=>window.nexusDesktop.getRuntimeURL());
+ const api=async(route,body)=>{const response=await fetch(base+'/api'+route,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const result=await response.json();assert.ok(response.ok,JSON.stringify(result));return result;};
+ const until=async predicate=>{for(let i=0;i<250;i++){const value=await predicate();if(value)return value;await new Promise(resolve=>setTimeout(resolve,100));}throw new Error('等待内置浏览器状态超时');};
+ await until(async()=>(await api('/bootstrap')).service.phase==='running');await page.waitForFunction(()=>!!localStorage.getItem('nexus.sessions'));const sessionId=await page.evaluate(()=>JSON.parse(localStorage.getItem('nexus.sessions')).activeSessionId);
+ await api('/webchat/open',{provider:'chatgpt',sessionId,url:fixture.url+'/chatgpt'});
+ const execute=code=>app.evaluate(({webContents},{origin,code})=>{const wc=webContents.getAllWebContents().find(wc=>wc.getURL().startsWith(origin));if(!wc)throw new Error('测试网页未打开');return wc.executeJavaScript(code);},{origin:fixture.url,code});
+ await execute('document.getElementById("login").click()');await until(async()=>(await api('/webchat')).ready);
+ const first=await api('/webchat/send',{sessionId,text:'MCP 先完成，网页还在生成'});await until(async()=>await execute('!!window.sentMessages?.length'));
+ const result=await api('/tools/call',{name:'client_reply',args:{requestId:first.requestId,sessionId,text:'MCP 已回传',done:true}});assert.ok(!result.isError);await until(async()=>{const state=await api('/webchat');return !state.busy&&state.pageBusy;});
+ const blocked=await fetch(base+'/api/webchat/send',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sessionId,text:'不能重复提交'})});assert.equal(blocked.status,400);await api('/webchat/stop',{});await until(async()=>!(await api('/webchat')).pageBusy);
+ const debug=async(name,args)=>{const result=await api('/tools/call',{name,args:{target:'chat',...args}});assert.ok(!result.isError,JSON.stringify(result));return JSON.parse(result.content[0].text);};
+ await debug('browser_console_read',{});assert.equal((await debug('browser_console_control',{operation:'execute',code:'window.nativeDebugFixture=42;console.log("native-console-fixture");nativeDebugFixture'})).value,42);assert.ok((await debug('browser_console_read',{})).entries.some(entry=>entry.values.includes('native-console-fixture')));
+ const style=await debug('browser_inject',{operation:'inject',kind:'css',code:'body{background:rgb(2,3,4)}'});assert.equal(await execute('getComputedStyle(document.body).backgroundColor'),'rgb(2, 3, 4)');await debug('browser_inject',{operation:'remove',injectionId:style.id});
+ await api('/webchat/open',{provider:'chatgpt',sessionId,url:`http://127.0.0.1:${wrapper.address().port}/`});await until(async()=>(await api('/webchat')).ready);
+ const fallback=await api('/webchat/send',{sessionId,text:'内置 iframe 的自动完成回复'});await until(async()=>(await api('/bootstrap')).clientReplies.some(message=>message.requestId===fallback.requestId&&message.source==='browser'&&message.done));
+ assert.equal((await api('/webchat')).busy,false);console.log('真实 Electron 内置网页：MCP 提前完成的发送保护/停止、控制台/JS/CSS、iframe 识别及 DOM 最终回复同步：通过。');
+}finally{if(app)await app.close();fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));wrapper.closeAllConnections();await new Promise(resolve=>wrapper.close(resolve));await fs.rm(directory,{recursive:true,force:true});}

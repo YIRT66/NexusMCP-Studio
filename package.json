@@ -1,6 +1,6 @@
 {
   "name": "nexusmcp-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "workspaces": [
     "frontend"
@@ -20,7 +20,14 @@
     "postinstall": "node node_modules/electron/install.js",
     "build:service": "node scripts/package-service.mjs",
     "pack:desktop": "npm run typecheck && npm run build && npm run build:service && electron-builder --dir --win --x64",
-    "dist": "npm run typecheck && npm run build && npm run build:service && electron-builder --win nsis --x64"
+    "dist": "npm run typecheck && npm run build && npm run build:service && electron-builder --win nsis --x64",
+    "service:start": "node runtime/server.mjs",
+    "prepare:runtime": "node scripts/prepare-runtime.mjs",
+    "pack:linux": "npm run typecheck && npm run build && npm run build:service && electron-builder --dir --linux --x64 --publish=never",
+    "dist:linux": "npm run typecheck && npm run build && npm run build:service && electron-builder --linux AppImage deb --x64 --publish=never",
+    "test": "node --test --test-concurrency=1 runtime/*.test.mjs",
+    "test:mcp": "npm --prefix preserved-mcp test",
+    "build:browser-extension": "node scripts/package-browser-extension.mjs"
   },
   "dependencies": {
     "express": "5.1.0",

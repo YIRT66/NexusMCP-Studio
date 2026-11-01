@@ -1,6 +1,8 @@
-const {WebContentsView}=require('electron');
+const {app,WebContentsView}=require('electron');
+const {NexusTurnTracker}=require(app.isPackaged?require('node:path').join(process.resourcesPath,'browser-plugin/turn-tracker.js'):'../browser-plugin/turn-tracker.js');
 const fs=require('node:fs');
 const path=require('node:path');
+const {NexusDebugController}=require(app.isPackaged?path.join(process.resourcesPath,'browser-plugin/debug-controller.js'):'../browser-plugin/debug-controller.js');
 
 const providers=[
  {id:'chatgpt',name:'ChatGPT',url:'https://chatgpt.com/'},
@@ -15,7 +17,8 @@ class WebChat{
  constructor(window,publish,stateFile){
   this.window=window;this.publish=publish;this.pages=new Map();this.provider='chatgpt';this.sessionId='default';
   this.job=null;this.visible=false;this.opening=false;this.lastState='';this.polling=false;this.disposed=false;
-  this.source=fs.readFileSync(path.join(__dirname,'../browser-plugin/adapter.js'),'utf8');
+  const pluginDirectory=app.isPackaged?path.join(process.resourcesPath,'browser-plugin'):path.join(__dirname,'../browser-plugin');
+  this.source=fs.readFileSync(path.join(pluginDirectory,'adapter.js'),'utf8');
   this.stateFile=stateFile;this.savedURLs={};this.savedProviders={};this.lastHistory='';try{const saved=JSON.parse(fs.readFileSync(stateFile,'utf8'));this.savedURLs=saved.urls||saved;this.savedProviders=saved.providers||{}}catch{}
   this.timer=setInterval(()=>void this.poll(),600);
  }
@@ -29,7 +32,7 @@ class WebChat{
   if(this.pages.has(this.key(provider,sessionId))||this.savedURLs[this.key(provider,sessionId)])return this.open(provider,undefined,sessionId);
   this.hide();this.sessionId=sessionId;this.provider=provider;this.status='新会话，打开 AI 浏览器后开始新的网页对话';this.lastHistory='';this.changed();return this.state();
  }
- state(){return {providers,provider:this.provider,sessionId:this.sessionId,url:this.page()?.webContents.getURL()||'',visible:this.visible,busy:!!this.job,status:this.status||'请打开 AI 网页并登录',replyMode:'mcp',requestId:this.job?.requestId}}
+ state(){return {providers,provider:this.provider,sessionId:this.sessionId,url:this.page()?.webContents.getURL()||'',visible:this.visible,busy:!!this.job,status:this.status||'请打开 AI 网页并登录',replyMode:'mcp',ready:this.ready,pageBusy:this.pageBusy,requestId:this.job?.requestId}}
  emit(type,data){if(!this.window.isDestroyed())this.window.webContents.send('webchat:event',{type,data});this.publish?.(type,data)}
  changed(){const value=this.state(),serialized=JSON.stringify(value);if(serialized===this.lastState)return;this.lastState=serialized;this.emit('webchat.state',value)}
  async open(id=this.provider,url,sessionId=this.sessionId){
@@ -53,7 +56,7 @@ class WebChat{
     wc.on('will-navigate',(event,next)=>{if(!/^https?:\/\//i.test(next))event.preventDefault()});
     const key=this.key();const navigated=()=>{this.saveURL(key,wc.getURL());this.changed()};
     wc.on('did-navigate',navigated);wc.on('did-navigate-in-page',navigated);
-    wc.on('render-process-gone',()=>{this.status='网页进程已退出，请刷新网页';if(this.job){this.job=null;this.emit('agent.status',{phase:'idle'})}this.changed()});
+    wc.on('render-process-gone',()=>{this.status='网页进程已退出，请刷新网页';if(this.job){this.emit('webchat.failed',{requestId:this.job.requestId,sessionId:this.job.sessionId,error:this.status});this.job=null;this.emit('agent.status',{phase:'idle'})}this.changed()});
     await wc.loadURL(url||this.savedURLs[key]||definition.url);
    }else if(url)await view.webContents.loadURL(url);
    if(wasVisible&&rect)this.show(rect);
@@ -70,7 +73,12 @@ class WebChat{
  hide(){for(const view of this.pages.values()){try{this.window.contentView.removeChildView(view)}catch{}}this.visible=false;this.changed()}
  async inspect(operation='inspect',text){
   const view=this.page();if(!view||view.webContents.isDestroyed())throw new Error('请先打开 AI 网页并登录');
-  return view.webContents.executeJavaScriptInIsolatedWorld(997,[{code:this.source+'\n;globalThis.nexusWebchatAdapter('+JSON.stringify({operation,text,provider:this.provider})+')'}]);
+  const code=this.source+'\n;globalThis.nexusWebchatAdapter('+JSON.stringify({operation,text,provider:this.provider})+')';
+  if(['send','stop'].includes(operation)&&view.nexusFrame){if(view.nexusFrame.detached)throw new Error('聊天框架已变化，请重新读取网页后重试');return view.nexusFrame.executeJavaScript(code);}
+  const result=await view.webContents.executeJavaScriptInIsolatedWorld(997,[{code}]);
+  if(!['status','inspect'].includes(operation)||result.ready){view.nexusFrame=null;return result;}
+  for(const frame of view.webContents.mainFrame.framesInSubtree){if(frame===view.webContents.mainFrame||frame.detached)continue;try{const snapshot=await frame.executeJavaScript(code);if(snapshot?.ready){view.nexusFrame=frame;return snapshot;}}catch{}}
+  view.nexusFrame=null;return result;
  }
  async send(data){
   if(this.opening)throw new Error('网页正在加载，请稍后再发送');
@@ -80,8 +88,8 @@ class WebChat{
   if(!this.page())throw new Error('请先打开内置 AI 浏览器并完成登录');
   if(data.sessionId&&data.sessionId!==this.sessionId)await this.open(this.provider,undefined,data.sessionId);
   if(!data.requestId||data.replyVia!=='mcp')throw new Error('客户端消息缺少 MCP 回复标识，请更新客户端');
-  const before=await this.inspect('status');if(!before.ready)throw new Error('请先打开内置浏览器，完成网站登录后再发送');
-  const id=data.requestId,job={id,requestId:data.requestId,sessionId:data.sessionId,started:Date.now(),sending:true};
+  const before=await this.inspect('status');if(before.busy)throw new Error('网页仍在生成，请等待或停止后再发送');if(!before.ready)throw new Error('请先打开内置浏览器，完成网站登录后再发送');
+  const id=data.requestId,job={id,requestId:data.requestId,sessionId:data.sessionId,started:Date.now(),sending:true,tracker:new NexusTurnTracker({requestId:data.requestId,sessionId:data.sessionId,provider:this.provider,baseline:before})};
   this.job=job;this.emit('agent.status',{phase:'executing'});this.changed();
   try{
    let prompt=data.text;
@@ -93,19 +101,27 @@ class WebChat{
   return {id};
  }
  async stop(){
-  if(!this.job)return;
+  if(!this.job&&!this.pageBusy)return;
   const result=await this.inspect('stop');
   if(!result.stopped&&result.busy)throw new Error('网页仍在生成，未找到停止按钮，请打开网页手动停止');
-  if(!result.stopped&&this.job.sending)throw new Error('消息仍在提交，请稍后再停止');
+  if(!result.stopped&&this.job?.sending)throw new Error('消息仍在提交，请稍后再停止');
   this.job=null;this.emit('agent.status',{phase:'idle'});this.changed();
  }
  async poll(){
   if(this.polling||this.opening||!this.pages.size||this.window.isDestroyed()||this.disposed)return;this.polling=true;
-  try{const key=this.key();const snapshot=await this.inspect('status');if(key!==this.key())return;this.status=this.job?(Date.now()-this.job.started>120000?'仍在等待 MCP 回复，请确认 GPT 已启用 client_reply 工具':'等待 GPT 通过 MCP 回复'):(snapshot.ready?'网页已就绪，回复通道为 MCP':'请在内置浏览器中完成登录');this.changed()}
+  try{const key=this.key();const snapshot=await this.inspect('status');if(key!==this.key())return;this.ready=!!snapshot.ready;this.pageBusy=!!snapshot.busy;
+   if(this.job&&Date.now()-this.job.started>10*60*1000){this.emit('webchat.failed',{requestId:this.job.requestId,sessionId:this.job.sessionId,error:'等待网页回复超时，请检查网页后重试'});this.job=null;this.emit('agent.status',{phase:'idle'});}
+   if(this.job){const completed=!this.job.sending&&this.job.tracker.observe(snapshot);if(completed){this.emit('webchat.reply',completed);this.status='网页已生成完，正在同步回复'}else this.status=snapshot.busy?'网页正在生成回复':snapshot.replyForRequestId===this.job.requestId?'正在确认回复完成':'等待网页回复或 MCP 回传';}
+   else this.status=snapshot.problem||(snapshot.ready?'网页已就绪':'请在内置浏览器中完成登录');this.changed()}
   catch(e){this.status=e.message;this.changed()}finally{this.polling=false}
  }
  async command(op,data={}){
-  if(op==='reply.received'){if(this.job?.requestId===data.requestId){this.job=null;this.status='MCP 回复已接收';this.emit('agent.status',{phase:'idle'});this.changed()}return {ok:true}}if(op==='state')return this.state();if(op==='activate')return this.activate(data.sessionId);if(op==='open')return this.open(data.provider,data.url,data.sessionId);if(op==='send')return this.send(data);if(op==='stop')return this.stop();
+  if(op==='debug'){
+   const wc=this.page()?.webContents;if(!wc)throw new Error('请先打开 AI 网页');
+   if(!wc.nexusDebugger){if(wc.debugger.isAttached())throw new Error('网页已有其他调试连接，请先关闭开发者工具');wc.debugger.attach('1.3');const controller=new NexusDebugController((method,params)=>wc.debugger.sendCommand(method,params));wc.debugger.on('message',(_event,method,params)=>controller.event(method,params));wc.debugger.once('detach',()=>{wc.nexusDebugger=null;});await controller.enable();wc.nexusDebugger=controller;}
+   return wc.nexusDebugger.dispatch(data);
+  }
+  if(op==='reply.received'){if(this.job?.requestId===data.requestId){this.job=null;this.status=data.source==='browser'?'网页回复已同步':'MCP 回复已接收';this.emit('agent.status',{phase:'idle'});this.changed()}return {ok:true}}if(op==='state')return this.state();if(op==='activate')return this.activate(data.sessionId);if(op==='open')return this.open(data.provider,data.url,data.sessionId);if(op==='send')return this.send(data);if(op==='stop')return this.stop();
   if(op==='back'){if(this.page()?.webContents.navigationHistory.canGoBack())this.page().webContents.navigationHistory.goBack();return}
   if(op==='reload'){if(this.job)throw new Error('请先停止网页回复再刷新');this.page()?.webContents.reload();return}
   throw new Error('未知浏览器操作');

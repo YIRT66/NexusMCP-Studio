@@ -29,7 +29,8 @@ export function App() {
   const ui=useSessionUI();
   useEffect(()=>{if(!s.connected)return;let active=true;void request<WebchatState>('/webchat/activate',{sessionId:ui.activeSessionId}).then(state=>{if(active)applyWebchatState(state);}).catch(error=>{if(active&&useStudio.getState().webchat.transport!=='extension')s.set({error:error.message});});return()=>{active=false;};},[ui.activeSessionId,s.connected,s.webchat.transport]);
   const [page, setPage] = useState<Page>('chat');
-  const [sidebar, setSidebar] = useState(true);
+  const [sidebar, setSidebar] = useState(()=>!matchMedia('(max-width: 700px)').matches);
+  useEffect(()=>{const media=matchMedia('(max-width: 700px)');const update=()=>setSidebar(!media.matches);media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
   const [query, setQuery] = useState('');
   const [nonce, setNonce] = useState(0);
   const [settingsTab,setSettingsTab]=useState<'general'|'model'|'mcp'|'permissions'>('general');
@@ -37,7 +38,7 @@ export function App() {
   useEffect(()=>useStudio.subscribe((state,previous)=>{if(state.messages!==previous.messages||state.calls!==previous.calls)useSessionUI.getState().capture(state.messages,state.calls);}),[]);
   useEffect(()=>{const active=useSessionUI.getState().sessions.find(item=>item.id===ui.activeSessionId);if(active)s.set({messages:active.messages,calls:active.calls});},[ui.activeSessionId]);
   useEffect(()=>{const pending=window.nexusDesktop?.getWorkspacePath?.();if(!pending)return;void pending.then(path=>{if(!path)return;const state=useSessionUI.getState();if(!state.workspaces[0]?.path)useSessionUI.setState({workspaces:state.workspaces.map((item,index)=>index===0?{...item,path,name:path.split(/[\\/]/).filter(Boolean).at(-1)||item.name}:item)});}).catch(error=>console.error('无法读取工作区：',error));},[]);
-  const [connection, setConnection] = useState(window.nexusDesktop||import.meta.env.VITE_RUNTIME_ENABLED === 'true' ? 1 : 0);
+  const [connection, setConnection] = useState(import.meta.env.VITE_WEB_PREVIEW === 'true' ? 0 : 1);
   const reduced = useReducedMotion();
   const transition = { type: 'tween' as const, duration: reduced ? 0 : 0.22, ease };
   useEffect(() => { if (connection) return connect(); s.set({connecting:false}); }, [connection]);
@@ -66,7 +67,7 @@ export function App() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
-  const navigate = (next: Page) => { setPage(next); };
+  const navigate = (next: Page) => { setPage(next); if(matchMedia('(max-width: 700px)').matches)setSidebar(false); };
   const openSettings = () => {setSettingsTab('general');s.set({ settingsOpen: true });};
   const openModel = () => {setSettingsTab('model');s.set({settingsOpen:true});};
   const openPlugins = () => {setSettingsTab('mcp');s.set({settingsOpen:true});};
@@ -96,6 +97,7 @@ export function App() {
           <footer><span className="local-avatar"><Monitor size={15} /></span><div><strong>本地工作空间</strong><small>{s.connected ? '本地运行时已连接' : '等待本地运行时'}</small></div><button title="设置" aria-label="打开设置" onClick={openSettings}><Settings size={16} /></button></footer>
         </aside>
       </div>
+      {sidebar&&<button className="mobile-sidebar-scrim" aria-label="关闭侧边栏" onClick={()=>setSidebar(false)}/>}
       <main className={`plain-main shell-main page-${page}`} ref={inertWhen(s.settingsOpen)}>
         <header className="plain-topbar"><span>{titles[page]}</span><div><button className="runtime-button" title="连接本地运行时" onClick={()=>setConnection(n=>n+1)}><i className={s.connected ? 'online' : ''} />{s.connected ? '已连接' : s.connecting ? '正在连接' : '未连接'}</button>{s.service.phase === 'running' && <button className="plain-stop" onClick={() => void request('/service/stop', {}).catch(error => s.set({ error: error.message }))}><Square size={11} />停止</button>}</div></header>
         <div className="shell-page-surface" ref={inertWhen(workViews.includes(page)||page==='chat')}>

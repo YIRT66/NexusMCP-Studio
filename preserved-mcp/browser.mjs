@@ -2,6 +2,9 @@ import { chromium } from 'playwright-core';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { pageControl } from './page-control.mjs';
+import {createRequire} from 'node:module';
+const {NexusDebugController}=createRequire(import.meta.url)('../browser-plugin/debug-controller.js');
+const debuggers=new WeakMap();
 
 let context;
 let opening;
@@ -19,6 +22,7 @@ async function launch() {
     const executablePath = process.env.NEXUS_BROWSER_PATH || [
       path.join(process.env['ProgramFiles(x86)'] || 'C:/Program Files (x86)', 'Microsoft/Edge/Application/msedge.exe'),
       path.join(process.env.ProgramFiles || 'C:/Program Files', 'Google/Chrome/Application/chrome.exe'),
+      ...(process.platform === 'linux' ? ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/microsoft-edge', '/opt/google/chrome/chrome', '/snap/bin/chromium', chromium.executablePath()] : []),
     ].find(p => existsSync(p));
     if (!executablePath && process.platform === 'win32') throw new Error('未找到 Edge 或 Chrome，请安装浏览器或设置 NEXUS_BROWSER_PATH');
     context = await chromium.launchPersistentContext(profile, { executablePath, channel: executablePath ? undefined : 'chrome', headless: process.env.NEXUS_BROWSER_HEADLESS === '1', viewport: null, args: ['--no-first-run', '--no-default-browser-check'] });
@@ -39,6 +43,11 @@ export async function browserControl({ action, id, options, frameId: requestedFr
   }
   const page = id ? pages.get(Number(id)) : [...pages.values()].at(-1);
   if (!page || page.isClosed()) throw new Error('浏览器页面不存在，请先使用 hancode_browser_open 打开网页，再用 hancode_status 获取页面 ID');
+  if(action==='debug'){
+    let controller=debuggers.get(page);
+    if(!controller){const session=await page.context().newCDPSession(page);controller=new NexusDebugController((method,params)=>session.send(method,params));session.on('Runtime.consoleAPICalled',data=>controller.event('Runtime.consoleAPICalled',data));session.on('Runtime.exceptionThrown',data=>controller.event('Runtime.exceptionThrown',data));session.on('Debugger.paused',data=>controller.event('Debugger.paused',data));session.on('Debugger.resumed',data=>controller.event('Debugger.resumed',data));await controller.enable();debuggers.set(page,controller);}
+    return controller.dispatch(options);
+  }
   if (action === 'page_read' || action === 'page_act') {
     const frame = requestedFrame ? page.frames().find(f => frameId(f) === requestedFrame) : page.mainFrame();
     if (!frame) throw new Error('iframe 已变化，请重新读取页面');

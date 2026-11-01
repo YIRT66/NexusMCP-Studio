@@ -66,9 +66,12 @@ test('独立 MCP：审批、文件、终端、浏览器、结构化系统读取�
   const act=await call('hancode_page_act',{id:opened.id,snapshotId:page.snapshotId,steps:[{action:'fill',selector:'#name',value:'中文填写成功'},{action:'click',selector:'button'}]});assert.equal(act.isError,false);
   assert.equal(text(await call('hancode_evaluate',{id:opened.id,code:'document.querySelector("output").textContent'})).value,'中文填写成功');
   const frame=page.frames.find(f=>!f.main);const sub=text(await call('hancode_page_read',{id:opened.id,frameId:frame.frameId,mode:'text'}));assert.match(JSON.stringify(sub),/子页面/);
-  const windows=text(await call('system_read',{section:'windows',limit:5}));assert.ok(Array.isArray(windows.windows));
+  const hasDesktop=info.desktop;
+  const windows=await call('system_read',{section:'windows',limit:5});
+  if(hasDesktop){assert.ok(!windows.isError,JSON.stringify(windows));assert.ok(Array.isArray(text(windows).windows));}else{assert.equal(windows.isError,true);assert.match(text(windows),/DISPLAY|Wayland/);}
   const invalidWindow=await call('window_control',{handle:'0',operation:'focus'});assert.equal(invalidWindow.isError,true);assert.match(text(invalidWindow),/窗口句柄无效/);
-  const screen=await call('desktop_screenshot');assert.equal(screen.isError,undefined);assert.ok(screen.content.some(c=>c.type==='image'&&c.mimeType==='image/png'));
+  const screen=await call('desktop_screenshot');
+  if(hasDesktop){assert.equal(screen.isError,undefined);assert.ok(screen.content.some(c=>c.type==='image'&&c.mimeType==='image/png'));}else{assert.equal(screen.isError,true);assert.match(text(screen),/DISPLAY|Wayland/);}
   assert.ok(events.some(e=>e.type==='tool.started'&&e.data.name==='file_write'&&e.data.source==='GPT / MCP'));
   assert.ok(events.some(e=>e.type==='tool.finished'&&e.data.name==='file_patch'));
   const recorded=await api('/bootstrap');assert.ok(recorded.calls.some(c=>c.status==='error'));assert.ok(recorded.history.length);
@@ -78,5 +81,5 @@ test('独立 MCP：审批、文件、终端、浏览器、结构化系统读取�
   const response=await api('/service/stop',{});assert.equal(response.phase,'stopped');assert.equal(response.url,'');await assert.rejects(fetch(boot.service.url));
   assert.equal((await stoppedWrite).isError,true);assert.equal(await fs.readFile(target,'utf8'),'第一行\n新内容\n');
   await assert.rejects(fs.access(path.join(directory,'connection.json')));
-  console.log(JSON.stringify({tools:tools.tools.length,events:events.length,terminalShell:terminal.shell,browser:'通过',systemRead:'通过',screen:'通过',directory}));
+  console.log(JSON.stringify({tools:tools.tools.length,events:events.length,terminalShell:terminal.shell,browser:'通过',systemRead:'通过',screen:hasDesktop?'通过':'已验证无桌面限制',directory}));
 });

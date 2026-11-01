@@ -1,6 +1,6 @@
 # NexusMCP 独立电脑控制服务 1.2.0
 
-此包提供电脑控制 MCP、cloudflared 临时映射与客户端本地控制接口。包含 Windows x64 Node 运行时和依赖，不要求安装 Node、Python、Codex CLI 或 Claude CLI，不要求模型 API Key。
+此包提供电脑控制 MCP、cloudflared 临时映射与客户端本地控制接口。按构建平台包含 Windows 或 Linux x64 Node 运行时和依赖，不要求安装 Node、Python、Codex CLI 或 Claude CLI，不要求模型 API Key。
 
 ## 直接给 GPT 使用
 
@@ -45,3 +45,7 @@
 临时隧道依赖网络和 Cloudflare 服务，不保证永久在线。服务注册成功后 DNS 可能需要片刻传播；若启动失败，请查看客户端服务日志。协议使用 Streamable HTTP JSON 响应，避免 Quick Tunnel 不支持 SSE 的限制。
 
 本地设置和操作预览日志保留在数据目录；长内容会截断，截图不写入活动日志。日志可能包含文件内容或终端输出，请按自己的隐私需要管理。
+
+## Linux 服务包
+
+Linux 包运行 `./start-mcp.sh` 或 `./start-service.sh`，使用随包的 `preserved-mcp/runtime/node`。Linux 安装、打包和能力限制见同包 `docs/LINUX.md`（源码仓库也提供该文件）。Linux 数据目录遵循 XDG；终端默认 Bash / 当前 Shell。桌面操作仅支持 X11，Windows UIA 暂不支持。

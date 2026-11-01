@@ -5,7 +5,7 @@ import { promises as fs, appendFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { registerTools, disposeTools } from './tools.mjs';
+import { registerTools, disposeTools, revokeSharedAccess } from './tools.mjs';
 import { ensureCloudflared, startTunnel } from './tunnel.mjs';
 import { instructions } from './instructions.mjs';
 import { z } from 'zod';
@@ -43,7 +43,7 @@ const audit = event => {
 };
 const registry = new Map();
 registerTools({ registerTool(name, config, handler) { registry.set(name, { config, handler, schema: z.object(config.inputSchema) }); } }, audit);
-function publishManifest(){process.send?.({ type: 'manifest', tools: [...[...registry].map(([name, t]) => ({ name, description: t.config.description, readOnly: !!t.config.annotations.readOnlyHint })),...extensionConfiguration().tools.map(t=>({name:t.name,description:t.description,extensionId:t.extensionId,readOnly:false}))] });}
+function publishManifest(){process.send?.({ type: 'manifest', tools: [...[...registry].map(([name, t]) => ({ name, description: t.config.description, readOnly: !!t.config.annotations.readOnlyHint, inputSchema:zodToJsonSchema(t.schema,{$refStrategy:'none'}) })),...extensionConfiguration().tools.map(t=>({name:t.name,description:t.description,extensionId:t.extensionId,readOnly:false,inputSchema:t.inputSchema}))] });}
 publishManifest();
 async function invokeTool(name,args){
   const local=registry.get(name);
@@ -94,9 +94,11 @@ process.on('message', async message => {
   else if (message?.type === 'configure') configure(message.settings);
   else if (message?.type === 'extensions.configure') { configureExtensions(message.configuration); publishManifest(); }
   else if (message?.type === 'extension.result') resolveExtension(message);
+  else if (message?.type === 'shared.revoke') {cancelApprovals(undefined,message.sharedAccessId);revokeSharedAccess(message.sharedAccessId);}
+  else if (message?.type === 'request.cancel') cancelApprovals(message.requestId);
   else if (message?.type === 'approval') resolveApproval(message.id, message.allowed);
   else if (message?.type === 'rpc') {
-    try { const result = await inContext(message.origin || 'local', () => invokeTool(message.name,message.args)); process.send?.({ type: 'rpc.result', id: message.id, result }); }
+    try { const result = await inContext(message.origin || 'local', () => invokeTool(message.name,message.args),message.context||{}); process.send?.({ type: 'rpc.result', id: message.id, result }); }
     catch (e) { process.send?.({ type: 'rpc.result', id: message.id, error: e.message }); }
   }
 });
