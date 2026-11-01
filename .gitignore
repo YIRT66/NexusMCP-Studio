@@ -1,0 +1,44 @@
+# Dependencies and generated products
+**/node_modules/
+**/.cache/
+**/.playwright-cli/
+**/output/
+**/release/
+**/dist/
+**/build/
+**/coverage/
+**/.next/
+**/.turbo/
+**/*.log
+**/npm-debug.log*
+**/.DS_Store
+**/Thumbs.db
+
+# Local accounts, browser profiles, caches and credentials
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.p12
+**/*.pfx
+**/*.key
+**/id_rsa
+**/id_ed25519
+**/.ssh/
+**/.aws/
+**/.config/
+**/*-profile/
+**/cookies.json
+**/credentials.json
+**/secrets.json
+**/auth.json
+**/token.json
+**/.npmrc
+
+# Runtime-specific private state
+NexusMCP-Studio/preserved-mcp/data/
+NexusMCP-Studio/preserved-mcp/PUBLIC-MCP-URL.txt
+
+# Redistributable binaries: fetch/install separately rather than store huge blobs in Git
+NexusMCP-Studio/preserved-mcp/runtime/node.exe
+NexusMCP-Studio/preserved-mcp/bin/cloudflared.exe
