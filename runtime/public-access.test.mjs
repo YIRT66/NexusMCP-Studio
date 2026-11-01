@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createServer,request as httpRequest} from 'node:http';
+const fetchPortal=(url,options={})=>new Promise((resolve,reject)=>{const request=httpRequest(url,{method:options.method||'GET',headers:options.headers},response=>{const chunks=[];response.on('data',chunk=>chunks.push(chunk));response.on('end',()=>resolve(new Response(Buffer.concat(chunks),{status:response.statusCode,headers:response.headers})));});request.once('error',reject);request.end(options.body);});
+import {EventEmitter} from 'node:events';
+import {promises as fs} from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import WebSocket,{WebSocketServer} from 'ws';
+import {PublicAccess} from './public-access.mjs';
+test('公网门户：随机分享链接、受保护 HTTP/WS、来源检查及即时撤销',{timeout:20000},async t=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-public-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));let forwarded;
+ const upstream=createServer((req,res)=>{forwarded=req.headers;res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true,path:req.url}));});const sockets=new WebSocketServer({server:upstream});sockets.on('connection',(ws,req)=>{assert.equal(req.headers['x-nexus-shared-access'],'private-relay-secret');ws.on('message',value=>ws.send(value));});await new Promise(resolve=>upstream.listen(0,'127.0.0.1',resolve));t.after(()=>{for(const ws of sockets.clients)ws.terminate();sockets.close();upstream.closeAllConnections();upstream.close();});
+ const revoked=[];const portal=new PublicAccess(directory,{target:`http://127.0.0.1:${upstream.address().port}`,relaySecret:'private-relay-secret',cloudflared:'fixture-cloudflared',publish:(type,data)=>{if(type==='public-access.revoked')revoked.push(data);},tunnelFactory:()=>{const child=new EventEmitter();child.kill=()=>child.emit('exit',0);return{child,ready:Promise.resolve('https://share.example.com')};}});t.after(()=>portal.stop());
+ const state=await portal.start();assert.match(state.url,/^https:\/\/share\.example\.com\/join\/[a-f0-9]{64}$/);assert.equal(JSON.stringify(state).includes('private-relay-secret'),false);
+ const base=`http://127.0.0.1:${portal.port}`,host='share.example.com',headers={host};
+ assert.equal((await fetchPortal(base+'/',{headers})).status,403);assert.equal((await fetchPortal(base+'/join/'+'0'.repeat(64),{headers})).status,403);assert.equal((await fetchPortal(base+'/',{headers:{host:'evil.example'}})).status,403);
+ const joined=await fetchPortal(base+new URL(state.url).pathname,{headers,redirect:'manual'});assert.equal(joined.status,302);const cookie=joined.headers.get('set-cookie');assert.match(cookie,/HttpOnly/);assert.match(cookie,/Secure/);assert.match(cookie,/SameSite=Strict/);assert.equal(joined.headers.get('referrer-policy'),'no-referrer');const session=cookie.split(';')[0];
+ const allowed=await fetchPortal(base+'/api/health',{headers:{host,cookie:session,origin:'https://share.example.com'}});assert.equal(allowed.status,200);assert.equal((await allowed.json()).path,'/api/health');assert.equal(forwarded['x-nexus-shared-access'],'private-relay-secret');assert.equal(forwarded.host,`127.0.0.1:${upstream.address().port}`);
+ assert.equal((await fetchPortal(base+'/api/tools/call',{method:'POST',headers:{host,cookie:session,origin:'https://evil.example','content-type':'application/json'},body:'{}'})).status,403);
+ assert.equal((await fetchPortal(base+'/api/public-access/stop',{method:'POST',headers:{host,cookie:session,origin:'https://share.example.com'}})).status,403);
+ const denied=new WebSocket(base.replace('http:','ws:')+'/ws',{headers:{host,origin:'https://share.example.com'}});await assert.rejects(new Promise((resolve,reject)=>{denied.once('open',resolve);denied.once('error',reject);}),/403/);
+ const socket=new WebSocket(base.replace('http:','ws:')+'/ws',{headers:{host,cookie:session,origin:'https://share.example.com'}});await new Promise((resolve,reject)=>{socket.once('open',resolve);socket.once('error',reject);});const echoed=new Promise(resolve=>socket.once('message',value=>resolve(value.toString())));socket.send('screen.subscribe');assert.equal(await echoed,'screen.subscribe');
+ const closed=new Promise(resolve=>socket.once('close',resolve));await portal.stop();await closed;assert.equal(portal.state.url,'');assert.ok(revoked.length);await assert.rejects(fetchPortal(base+'/api/health',{headers:{host,cookie:session}}));
+ await portal.start();const next=`http://127.0.0.1:${portal.port}`;assert.notEqual(portal.state.url,state.url);assert.equal((await fetchPortal(next+'/api/health',{headers:{host,cookie:session}})).status,403);
+});

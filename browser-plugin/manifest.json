@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "NexusMCP 网页聊天助手",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "与 NexusMCP 内置浏览器共用的网页聊天适配器，支持已登录 AI 网站的发送、读取与停止。",
   "permissions": [
     "activeTab",
     "tabs",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "background": {
     "service_worker": "background.js"
@@ -26,13 +27,32 @@
         "https://chat.qwen.ai/*",
         "https://www.kimi.com/*",
         "https://kimi.com/*",
-        "https://www.doubao.com/*"
+        "https://www.doubao.com/*",
+        "https://www.kimi.ai/*",
+        "https://kimi.ai/*"
       ],
       "js": [
         "adapter.js",
         "content.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true
     }
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://claude.ai/*",
+    "https://chat.deepseek.com/*",
+    "https://gemini.google.com/*",
+    "https://chat.qwen.ai/*",
+    "https://www.kimi.com/*",
+    "https://kimi.com/*",
+    "https://www.doubao.com/*",
+    "https://www.kimi.ai/*",
+    "https://kimi.ai/*"
+  ],
+  "optional_permissions": [
+    "debugger"
   ]
 }

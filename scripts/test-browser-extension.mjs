@@ -42,7 +42,7 @@ try {
   console.log('真实扩展浏览器已启动');
   const worker = browser.serviceWorkers()[0] || await browser.waitForEvent('serviceworker');
   const html = await fetch(fixture.url + '/chatgpt').then(response => response.text());
-  await browser.route('https://chatgpt.com/**', route => route.fulfill({ status: 200, contentType: 'text/html;charset=utf-8', body: html }));
+  await browser.route('https://chatgpt.com/**', route => route.fulfill({ status: 200, contentType: 'text/html;charset=utf-8', body: route.request().url().endsWith('/framed')?'<iframe src="https://chatgpt.com/inner" style="width:900px;height:700px"></iframe>':html }));
   console.log('Manifest V3 worker 已加载');
   const popup = await browser.newPage();
   await popup.goto(worker.url().replace('background.js', 'popup.html'));
@@ -71,6 +71,12 @@ try {
   const boot = await api('/bootstrap');
   assert.equal(boot.clientReplies.length, 2);
   assert.ok(boot.clientReplies.every(reply => reply.source === 'MCP' && reply.sessionId === 'extension-session-A'));
+  await target.goto('https://chatgpt.com/framed');
+  await until(async()=>{const snap=await api('/webchat');return snap.ready&&!snap.busy;});
+  const fallback=await api('/webchat/send',{text:'iframe 中的网页回退回复',sessionId:'extension-session-A'});
+  await until(async()=>{const boot=await api('/bootstrap');return boot.clientReplies.some(reply=>reply.requestId===fallback.requestId&&reply.source==='browser'&&reply.done);});
+  assert.equal((await api('/webchat')).busy,false);
+  assert.ok((await api('/bootstrap')).clientReplies.find(reply=>reply.requestId===fallback.requestId).content.includes('iframe 中的网页回退回复'));
   await api('/webchat/open', { provider: 'chatgpt', sessionId: 'extension-session-B' });
   await until(() => browser.pages().length === count + 1);
   assert.equal(browser.pages().length, count + 1);
@@ -82,7 +88,7 @@ try {
   await popup.locator('#disconnect').click();
   await popup.locator('#connection').filter({ hasText: '未连接' }).waitFor();
   await until(async () => !(await api('/webchat/bridge')).connected);
-  console.log('真实 Manifest V3 扩展：配对、网页发送、MCP 回复、会话标签复用、恢复网页与断开均通过。');
+  console.log('真实 Manifest V3 扩展：配对、发送、MCP 回复、iframe 聊天框识别、DOM 完成回退、会话隔离与断开均通过。');
 } finally {
   await browser?.close();
   if (child.connected) { child.send({ type: 'shutdown' }); await new Promise(resolve => { child.once('exit', resolve); setTimeout(() => { child.kill(); resolve(); }, 8000).unref(); }); }

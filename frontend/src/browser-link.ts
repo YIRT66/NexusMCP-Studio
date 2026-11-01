@@ -34,12 +34,12 @@ export function useBrowserLink(sessionId:string):BrowserLink {
   const bound=!!webchat.url&&(!webchat.sessionId||webchat.sessionId===sessionId);
   const needsLogin=webchat.ready===false||/请.{0,8}(完成)?登录|未登录/.test(webchat.status);
   const webpageProblem=/网页已关闭|网页插件未就绪|不支持|超时|未停止|已退出|无法连接/.test(webchat.status);
-  const ready=!external||webchat.ready===true||/网页已就绪|网页正在生成回复|MCP 回复已接收/.test(webchat.status);
+  const ready=!external||webchat.ready===true||/网页已就绪|网页正在生成回复|MCP 回复已接收|网页回复已同步/.test(webchat.status);
   let label='网页未绑定',detail='为当前聊天打开对应的 AI 网页，再开始发送消息。';
   if(!connected){label='客户端未连接';detail='连接本地运行时后，可使用浏览器聊天。';}
   else if(external&&extensionConnected===false){label='浏览器扩展未连接';detail='复制连接地址，在 Edge / Chrome 扩展中连接客户端。';}
   else if(external&&extensionConnected===null){label='正在检查扩展';detail='正在确认浏览器扩展的连接状态。';}
-  else if(bound&&webchat.busy){label=webchat.replyMode==='mcp'?webchat.status:'AI 正在回复';detail=webchat.replyMode==='mcp'?'回答将通过 MCP 回传，请在 AI 网页对话中启用本软件的 MCP 连接。':'当前聊天正在接收网页回复。';}
+  else if(bound&&webchat.busy){label=webchat.replyMode==='mcp'?webchat.status:'AI 正在回复';detail=webchat.replyMode==='mcp'?'正在接收本轮回复；网页生成结束后会自动确认，MCP 回传可优先同步。':'当前聊天正在接收网页回复。';}
   else if(bound&&needsLogin){label='请完成网页登录';detail=webchat.status||'请在浏览器中完成登录，再回到这里发送消息。';}
   else if(bound&&webpageProblem){label='网页需要处理';detail=webchat.status;}
   else if(bound&&!ready){label='正在检查当前网页';detail='正在确认当前聊天对应的网页是否可用。';}

@@ -36,7 +36,10 @@
  <section class="session-section" aria-label="软件当前聊天">
   <div class="section-heading"><h2>当前会话</h2><span id="provider" class="provider-label">尚未绑定</span></div>
   <div class="session-card"><span class="session-icon"><svg aria-hidden="true"><use href="#icon-chat"/></svg></span><div class="session-content"><strong id="session-title">让对话接着发生</strong><p id="binding">连接客户端后，在软件中为当前聊天打开 AI 网页。</p></div></div>
-  <button class="session-open" id="open-binding" type="button" hidden>打开会话网页<svg aria-hidden="true"><use href="#icon-arrow"/></svg></button>
+  <button class="session-open" id="bind-active" type="button" hidden>绑定当前 AI 标签页</button>
+  <button class="session-open" id="debug-enable" type="button">开启网页调试（控制台 / 注入）</button>
+  <button class="text-button" id="debug-disable" type="button">关闭网页调试</button>
+ <button class="session-open" id="open-binding" type="button" hidden>打开会话网页<svg aria-hidden="true"><use href="#icon-arrow"/></svg></button>
  </section>
  <div id="notice" class="notice" role="alert" hidden><span id="notice-text"></span><button id="dismiss-notice" type="button" aria-label="关闭提示">×</button></div>
  <details class="page-section" id="page-tools">

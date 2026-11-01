@@ -1,7 +1,10 @@
 import {create} from 'zustand';
-import type {Settings,Mode,View,Phase,Tool,ToolCall,Message,Approval,Frame,ServerEntry,ServiceState,ServiceLog,HistoryEntry,WebchatState} from './types';
+import type {DshState,ApiModelProfile,ApiChatState,Settings,Mode,View,Phase,Tool,ToolCall,Message,Approval,Frame,ServerEntry,ServiceState,ServiceLog,HistoryEntry,WebchatState} from './types';
 import {useSessionUI} from './session-ui';
 interface State {
+ publicAccess:import('./types').PublicAccessState;remote:boolean;
+ dsh:DshState;
+ apiModels:ApiModelProfile[];apiChats:Record<string,ApiChatState>;
  platform:string;terminalShells:string[];
  webchat:WebchatState;
  connected:boolean;connecting:boolean;mode:Mode;phase:Phase;view:View;sidebar:boolean;settingsOpen:boolean;
@@ -10,6 +13,8 @@ interface State {
  terminalId:string|null;terminalVersion:number;terminalChunks:string[];set:(patch:Partial<State>)=>void;receive:(event:{type:string;data:any})=>void;
 }
 export const useStudio=create<State>((set,get)=>({
+ publicAccess:{phase:'stopped',url:'',error:'',startedAt:0,connections:0},remote:false,
+ dsh:{installed:false,running:false,phase:'uninstalled',version:'0.2.1-rc.5',error:'',progress:'',url:''},apiModels:[],apiChats:{},
  platform:'',terminalShells:['default'],
  webchat:{provider:'chatgpt',providers:[],status:'打开 AI 网页并登录',busy:false},
  connected:false,connecting:true,mode:'safe',phase:'idle',view:'desktop',sidebar:true,settingsOpen:false,
@@ -17,6 +22,12 @@ export const useStudio=create<State>((set,get)=>({
  service:{phase:'stopped',url:'',localUrl:'',error:'',lastClient:'',clientAt:0,startedAt:0,localOnly:false},
  tools:[],calls:[],logs:[],history:[],messages:[],approvals:[],servers:[],frame:null,cursor:null,metrics:null,error:'',terminalId:null,terminalVersion:0,terminalChunks:[],set,
  receive:({type,data})=>{
+  if(type==='public-access.state'){set({publicAccess:data});return;}
+  if(type==='dsh.state'){set({dsh:data});return;}
+  if(type==='models.changed'){set({apiModels:data});return;}
+  if(type==='chat.state'){set({apiChats:{...get().apiChats,[data.sessionId]:data}});return;}
+  if(type==='client.failed'){if(data.sessionId===useSessionUI.getState().activeSessionId)set({error:data.error});return;}
+  if((type==='tool.started'||type==='tool.finished')&&data.sessionId&&data.sessionId!==useSessionUI.getState().activeSessionId){const session=useSessionUI.getState().sessions.find(session=>session.id===data.sessionId);if(session){const calls=session.calls.some(call=>call.id===data.id)?session.calls.map(call=>call.id===data.id?{...call,...data}:call):[...session.calls,data];useSessionUI.getState().captureSession(session.id,session.messages,calls);}return;}
   if(type==='webchat.history'){
    const ui=useSessionUI.getState();
    if(data.sessionId===ui.activeSessionId)set({messages:data.messages});
@@ -25,7 +36,7 @@ export const useStudio=create<State>((set,get)=>({
   if(type==='webchat.state'){set({webchat:data,phase:data.busy?'executing':'idle'});return;}
   if(type==='message.upsert'){
    const ui=useSessionUI.getState();
-   if(data.sessionId&&data.sessionId!==ui.activeSessionId){const target=ui.sessions.find(s=>s.id===data.sessionId);if(target){const messages=target.messages.some(m=>m.id===data.id)?target.messages.map(m=>m.id===data.id?data:m):[...target.messages,data];useSessionUI.setState({sessions:ui.sessions.map(s=>s.id===target.id?{...s,messages,updatedAt:Date.now()}:s)});}return;}
+   if(data.sessionId&&data.sessionId!==ui.activeSessionId){const target=ui.sessions.find(s=>s.id===data.sessionId);if(target){const messages=target.messages.some(m=>m.id===data.id)?target.messages.map(m=>m.id===data.id?data:m):[...target.messages,data];ui.captureSession(target.id,messages,target.calls);}return;}
    set({messages:get().messages.some(m=>m.id===data.id)?get().messages.map(m=>m.id===data.id?data:m):[...get().messages,data]});return;
   }
   if(type==='service.state')set({service:data,...(data.phase==='starting'?{logs:[],approvals:[],frame:null}:{})});

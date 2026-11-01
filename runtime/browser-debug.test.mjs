@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {promises as fs} from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import {browserControl,closeBrowser} from '../preserved-mcp/browser.mjs';
+test('真实 Chromium：控制台、异常、主世界 JS/CSS 注入与导航清理',{timeout:40000},async t=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-debug-'));const old=process.env.MCP_DATA_DIR,headless=process.env.NEXUS_BROWSER_HEADLESS;process.env.MCP_DATA_DIR=directory;process.env.NEXUS_BROWSER_HEADLESS='1';
+ t.after(async()=>{await closeBrowser();if(old===undefined)delete process.env.MCP_DATA_DIR;else process.env.MCP_DATA_DIR=old;if(headless===undefined)delete process.env.NEXUS_BROWSER_HEADLESS;else process.env.NEXUS_BROWSER_HEADLESS=headless;await fs.rm(directory,{recursive:true,force:true});});
+ const {id}=await browserControl({action:'browser_open',url:'about:blank'});const debug=options=>browserControl({action:'debug',id,options});
+ await debug({operation:'read'});await debug({operation:'execute',code:'window.fixtureValue=41; console.log("fixture", {apiKey:"hidden",visible:7}); fixtureValue+1'}).then(result=>assert.equal(result.value,42));
+ const log=await debug({operation:'read'});assert.equal(log.entries[0].values[0],'fixture');assert.equal(log.entries[0].values[1].apiKey,'[redacted]');
+ await assert.rejects(debug({operation:'execute',code:'throw new Error("fixture error")'}),/fixture error/);
+ const css=await debug({operation:'inject',kind:'css',persistent:true,code:'body { background: rgb(1, 2, 3); }'});assert.equal((await debug({operation:'execute',code:'getComputedStyle(document.body).backgroundColor'})).value,'rgb(1, 2, 3)');
+ const js=await debug({operation:'inject',kind:'js',persistent:true,code:'window.fixtureInjected=99'});assert.equal((await debug({operation:'execute',code:'fixtureInjected'})).value,99);
+ await browserControl({action:'navigate',id,url:'about:blank?next'});assert.equal((await debug({operation:'execute',code:'fixtureInjected'})).value,99);
+ await debug({operation:'remove',injectionId:css.id});assert.notEqual((await debug({operation:'execute',code:'getComputedStyle(document.body).backgroundColor'})).value,'rgb(1, 2, 3)');
+ await debug({operation:'remove',injectionId:js.id});await browserControl({action:'navigate',id,url:'about:blank?clean'});assert.equal((await debug({operation:'execute',code:'typeof fixtureInjected'})).value,'undefined');
+ await debug({operation:'clear'});assert.equal((await debug({operation:'read'})).entries.length,0);
+ await debug({operation:'pause'});const evaluation=debug({operation:'execute',code:'window.afterPause=true'});
+ for(let i=0;i<100&&!(await debug({operation:'read'})).paused;i++)await new Promise(resolve=>setTimeout(resolve,10));
+ assert.equal((await debug({operation:'read'})).paused,true);await debug({operation:'resume'});await evaluation;
+ assert.equal((await debug({operation:'read'})).paused,false);
+});

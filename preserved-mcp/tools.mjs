@@ -9,9 +9,10 @@ import { fileURLToPath } from 'node:url';
 import { systemRequest, disposeSystemReader } from './system-reader.mjs';
 import { startActivity } from './activity.mjs';
 import { defaultShell } from './shell.mjs';
-import { authorize } from './policy.mjs';
+import { authorize,callContext } from './policy.mjs';
 import { browserControl, closeBrowser } from './browser.mjs';
 import { extensionConfiguration, extensionRequest } from './extension-bridge.mjs';
+import {processMemory,injectLibrary} from './process-control.mjs';
 import { linuxDesktop, linuxCapabilities } from './linux-system.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -20,6 +21,7 @@ const image = data => ({ content: [{ type: 'image', data, mimeType: 'image/png' 
 const compact = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
 const sessions = new Map();
 const desktopChildren = new Set();
+export function revokeSharedAccess(accessId){for(const [id,session] of sessions)if(session.sharedAccessId===accessId){try{session.pty.kill();}catch{}sessions.delete(id);}}
 export async function disposeTools() { for (const s of sessions.values()) { try { s.pty.kill(); } catch {} } sessions.clear(); for(const c of desktopChildren) c.kill(); desktopChildren.clear(); disposeSystemReader(); await closeBrowser(); }
 
 async function bridge(body) {
@@ -84,6 +86,11 @@ export function registerTools(server, audit = () => {}) {
     snapshotId: z.string().max(100), steps: z.array(z.object({ ref: z.string().max(200), action: z.enum(['invoke', 'set_value', 'toggle', 'select', 'expand', 'collapse', 'focus', 'read']), value: z.string().max(100000).optional() })).min(1).max(30),
   }, async a => { const result = await systemRequest('ui_act', a); return { ...compact(result), isError: result.results.some(r => !r.ok) }; });
   const pageTarget = { id: z.number().int().positive().optional(), frameId: z.string().regex(/^\d+:\d+$/).optional() };
+  const debugTarget={target:z.enum(['managed','chat']).default('managed'),id:z.number().int().positive().optional()};
+  const debug=({target,id,...options})=>target==='chat'?extensionRequest('browser.debug','',options):browserControl({action:'debug',id,options});
+  tool('browser_console_read','读取绑定网页的控制台及异常。managed 为独立浏览器；chat 为当前 AI 对话网页（扩展需点击开启网页调试）。首次调用开始采集，保留最近 500 条，返回游标可增量读取。敏感命名的对象属性预览隐藏。',{...debugTarget,cursor:z.number().int().min(0).default(0),limit:z.number().int().min(1).max(300).default(100)},async a=>text(await debug({...a,operation:'read'})),true);
+  tool('browser_console_control','控制指定网页的调试器：execute 在页面主世界执行 JS（可 await）；clear 清空采集；pause/resume 暂停恢复；terminate 终止脚本。以当前浏览器权限运行，不绕过网站登录。',{...debugTarget,operation:z.enum(['execute','clear','pause','resume','terminate']),code:z.string().max(100000).optional()},async a=>text(await debug(a)));
+  tool('browser_inject','向指定网页主世界注入 JS 或 CSS，可选择后续导航继续注入。返回 injectionId；remove 可撤销后续注入并移除当前 CSS。已执行 JS 的副作用需脚本自行清理。',{...debugTarget,operation:z.enum(['inject','remove']).default('inject'),kind:z.enum(['js','css']).default('js'),code:z.string().max(100000).optional(),persistent:z.boolean().default(false),injectionId:z.string().max(200).optional()},async a=>text(await debug(a)));
   const readOptions = { mode: z.enum(['overview', 'text', 'links', 'forms', 'tables', 'elements']).default('overview'), selector: z.string().max(2000).optional(), query: z.string().max(300).optional(), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(300).default(80), maxText: z.number().int().min(0).max(50000).default(8000), maxRows: z.number().int().min(1).max(100).default(30) };
   tool('hancode_page_read', '优先使用此工具读取独立管理的浏览器页面，无需截图/手写 JS。先用 hancode_status 取得页面 id；省略 id 读取最后打开的页面。返回正文、标题、链接、表单值/选项、表格、可操作元素 ref 与 snapshotId。支持筛选、分页、开放 Shadow DOM，以及用返回的 frameId 单独读取跨源 iframe。', { ...pageTarget, ...readOptions }, async ({ id, frameId, ...options }) => compact(await bridge({ action: 'page_read', id, frameId, options })), true);
   tool('hancode_page_act', '按 hancode_page_read 的 ref 和 snapshotId 操作页面，免截图与坐标。支持批量点击、填表、选择、勾选、滚动、等待、读取。页面导航后引用失效，元素消失或步骤失败会停止。默认操作后直接返回新页面摘要，减少额外读取；选择器必须只匹配一个可见元素。', {
@@ -104,7 +111,7 @@ export function registerTools(server, audit = () => {}) {
     const shell = a.shell || defaultShell();
     const child = pty.spawn(shell, a.args || (process.platform === 'win32' && !a.shell ? ['-NoLogo', '-NoProfile'] : []), { name: 'xterm-256color', cols: a.cols, rows: a.rows, cwd: a.cwd || os.homedir(), env: { ...process.env, ...a.env }, useConpty: true });
     const id = randomUUID();
-    const session = { pty: child, shell, output: '', offset: 0, exited: false };
+    const session = { sharedAccessId:callContext().sharedAccessId, pty: child, shell, output: '', offset: 0, exited: false };
     child.onData(data => { session.output += data; if (session.output.length > 1_000_000) { const dropped = session.output.length - 1_000_000; session.output = session.output.slice(dropped); session.offset += dropped; } });
     child.onExit(e => { session.exited = true; session.exitCode = e.exitCode; });
     sessions.set(id, session);
@@ -188,6 +195,8 @@ export function registerTools(server, audit = () => {}) {
   tool('hancode_navigate', '导航指定内置浏览器页面。', { id: z.number().int().positive(), url: z.string().url() }, async a => text(await bridge({ action: 'navigate', ...a })));
   tool('hancode_focus', '显示并聚焦独立浏览器页面。', { id: z.number().int().positive().optional() }, async a => text(await bridge({ action: 'focus', ...a })));
   tool('window_control', '按 system_read windows 返回的 handle 聚焦、最小化、最大化、还原、置顶或关闭窗口。close 发送关闭请求，未保存文档可能要求确认。', { handle: z.string().regex(/^\d+$/), operation: z.enum(['focus','minimize','maximize','restore','topmost','unpin','close']) }, async a => text(await desktop('window_control', a)));
+  tool('process_memory','查询指定 PID 的占用、内存映射或读取明确地址范围。summary 返回 startIdentity；注入时必须使用这个标识，避免 PID 被复用。read 单次最多 64 KiB，权限由操作系统检查。',{pid:z.number().int().positive(),section:z.enum(['summary','regions','read']).default('summary'),query:z.string().max(300).default(''),offset:z.number().int().min(0).default(0),limit:z.number().int().min(1).max(300).default(100),address:z.string().regex(/^0x[0-9a-fA-F]+$/).optional(),bytes:z.number().int().min(1).max(65536).default(256),expectedStartIdentity:z.string().max(200).optional()},async args=>text(await processMemory(args)),true);
+  tool('process_inject','向明确的目标进程加载本机 DLL（Windows）或 SO（Linux，需要 gdb）。先用 process_memory 核对可执行文件和 startIdentity。动态库会在目标内执行初始化代码；仅使用当前用户权限，不提升权限。结果区分已加载、已存在及仍在进行。',{pid:z.number().int().positive(),libraryPath:z.string().min(1).max(4000),expectedStartIdentity:z.string().min(1).max(200)},async args=>text(await injectLibrary(args)));
   tool('process_terminate', '终止指定 PID 的进程，权限与当前用户相同。终止之前先 system_read processes 核对 PID；不会自动提升权限。', { pid: z.number().int().positive() }, async a => { if(a.pid===process.pid || a.pid===process.ppid) throw new Error('请用客户端停止按钮关闭 MCP 服务');process.kill(a.pid);return text({ok:true,pid:a.pid,note:'已发送终止信号，请重新读取进程列表核实'}); });
   tool('clipboard_read', '直接读取系统剪贴板文本。', {}, async () => text(await desktop('clipboard_read')), true);
   tool('clipboard_write', '写入系统剪贴板文本，支持中文。', {text:z.string().max(100000)}, async a => text(await desktop('clipboard_write', a)));

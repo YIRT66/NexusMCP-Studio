@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {promises as fs} from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import {ClientReplies} from './client-replies.mjs';
+const {NexusTurnTracker}=createRequire(import.meta.url)('../browser-plugin/turn-tracker.js');
+test('网页完成检测：匹配本轮、等待稳定、排除停顿和旧回复',()=>{
+ const tracker=new NexusTurnTracker({requestId:'request-new',sessionId:'session-a',provider:'chatgpt',baseline:{replyId:'old',reply:'旧回复'},startedAt:0,stableMs:100,graceMs:100});
+ const snapshot={replyId:'new',reply:'新回复',replyCount:2,lastUserText:'request-new',busy:false};
+ assert.equal(tracker.observe({...snapshot,lastUserText:'request-old'},100),null);
+ assert.equal(tracker.observe({...snapshot,busy:true},200),null);
+ assert.equal(tracker.observe(snapshot,300),null);
+ assert.equal(tracker.observe(snapshot,350),null);assert.equal(tracker.observe(snapshot,400),null);assert.equal(tracker.observe(snapshot,450),null);
+ assert.equal(tracker.observe({...snapshot,busy:true},500),null);
+ assert.equal(tracker.observe({...snapshot,reply:'新回复继续'},550),null);
+ for(const at of [600,650,700])assert.equal(tracker.observe({...snapshot,reply:'新回复继续'},at),null);
+ const result=tracker.observe({...snapshot,reply:'新回复继续'},800);assert.equal(result.requestId,'request-new');assert.equal(result.text,'新回复继续');assert.equal(result.sessionId,'session-a');
+});
+test('回复去重：MCP 优先，网页回退不串会话、不覆盖完成请求',async t=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-replies-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));const events=[];const replies=new ClientReplies(directory,(type,data)=>events.push({type,data}));await replies.init();
+ const request=await replies.create({sessionId:'A',text:'第一条',provider:'chatgpt'});await replies.sent(request);
+ await assert.rejects(replies.receiveBrowser({requestId:request.requestId,sessionId:'B',provider:'chatgpt',text:'不应接收'}),/不匹配/);
+ await replies.receive({requestId:request.requestId,sessionId:'A',text:'MCP 完整回答',done:true});
+ await replies.receiveBrowser({requestId:request.requestId,sessionId:'A',provider:'chatgpt',text:'网页回退'});assert.equal(request.text,'MCP 完整回答');
+ const next=await replies.create({sessionId:'A',text:'第二条',provider:'chatgpt'});await replies.sent(next);
+ await replies.receiveBrowser({requestId:next.requestId,sessionId:'A',provider:'chatgpt',text:'直接从网页同步的回答',done:true});assert.equal(next.source,'browser');assert.equal(next.status,'completed');
+ assert.ok(events.some(event=>event.type==='message.upsert'&&event.data.source==='browser'));assert.ok(replies.messages().every(message=>Number.isFinite(message.createdAt)&&Number.isFinite(message.completedAt)));
+});

@@ -11,6 +11,9 @@ import { ExtensionManager } from './extensions.mjs';
 import { WebchatRelay } from './webchat-relay.mjs';
 import {ClientReplies} from './client-replies.mjs';
 import platform from '../preserved-mcp/platform.cjs';
+import {PublicAccess} from './public-access.mjs';
+import {DshRuntime} from './dsh-runtime.mjs';
+import {ApiModels} from './api-models.mjs';
 const require = createRequire(new URL('../preserved-mcp/package.json', import.meta.url));
 const express = require('express');
 const { WebSocketServer, WebSocket } = require('ws');
@@ -18,6 +21,9 @@ const { WebSocketServer, WebSocket } = require('ws');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = path.resolve(process.env.NEXUS_DATA_DIR || platform.dataDirectory());
 await fs.mkdir(dataDir, { recursive: true });
+const sharedRelaySecret=randomBytes(32).toString('hex');
+const isShared=req=>req?.headers?.['x-nexus-shared-access']===sharedRelaySecret;
+const sharedContext=req=>isShared(req)?{sharedAccessId:String(req.headers['x-nexus-access-id']||'')}:{};
 const configFile = path.join(dataDir, 'settings.json');
 const bridgeKeyFile=path.join(dataDir,'browser-bridge.key');let bridgeKey;try{bridgeKey=(await fs.readFile(bridgeKeyFile,'utf8')).trim()}catch{}if(!/^[a-f0-9]{64}$/.test(bridgeKey||'')){bridgeKey=randomBytes(32).toString('hex');await fs.writeFile(bridgeKeyFile,bridgeKey,{mode:0o600})}
 let settings = { theme: 'dark', fontSize: 14, detail: 'standard', autoCollapse: true, frameRate: 1, mode: 'safe', disabled: [], prompt: instructions };
@@ -27,14 +33,22 @@ let child, stopPromise, tools = [], calls = [], logs = [], approvals = [], histo
 let terminal = null, terminalCursor = 0, pollingTerminal = false, pollingScreen = false;
 const pending = new Map();
 const webRequests=new Map();let webState={provider:'chatgpt',providers:[],status:'等待客户端浏览器',busy:false,transport:'embedded'};
-let replies;
+let replies,apiModels;
 function receiveWebEvent(type,data){
+ if(type==='webchat.reply'){
+  void replies.receiveBrowser(data).then(()=>webCommand('reply.received',{requestId:data.requestId,sessionId:data.sessionId,source:'browser'})).catch(error=>log('网页回复同步失败：'+error.message));return;
+ }
+ if(type==='webchat.failed'){
+  const request=replies.requests.find(request=>request.requestId===data.requestId&&request.sessionId===data.sessionId&&request.mode!=='api');
+  if(request)void replies.failed(request,new Error(data.error));webState={...webState,busy:false,status:data.error};emit('webchat.state',webState);return;
+ }
  if(type==='webchat.history'||type==='message.upsert')return;
- const waiting=replies?.requests.find(r=>r.sessionId===(data.sessionId||webState.sessionId)&&['sending','waiting','replying'].includes(r.status));
- if(type==='webchat.state'){webState={...data,replyMode:'mcp',busy:!!waiting||data.busy,status:waiting?(waiting.status==='replying'?'MCP 正在回传回复':'等待 GPT 通过 MCP 回复'):data.status};emit(type,webState);}
+ const waiting=replies?.requests.find(r=>r.mode!=='api'&&r.sessionId===(data.sessionId||webState.sessionId)&&['sending','waiting','replying'].includes(r.status));
+ if(type==='webchat.state'){webState={...data,replyMode:'mcp',busy:!!waiting||data.busy,status:waiting?(waiting.status==='replying'?'正在接收回复':data.status||'正在等待网页回复'):data.status};emit(type,webState);}
  else if(type==='agent.status'){emit(type,waiting?{phase:'executing'}:data)}else emit(type,data);
 }
-let webTransport=settings.webchatTransport==='extension'?'extension':'embedded';const relay=new WebchatRelay((type,data)=>{if(webTransport==='extension')receiveWebEvent(type,data)},bridgeKey);
+const desktopHost=!!process.env.NEXUS_DESKTOP_ORIGIN;
+let webTransport=settings.webchatTransport==='extension'||!desktopHost?'extension':'embedded';const relay=new WebchatRelay((type,data)=>{if(webTransport==='extension')receiveWebEvent(type,data)},bridgeKey);
 if(webTransport==='extension')webState=relay.state;
 function webCommand(operation,data={}){if(webTransport==='extension')return relay.command(operation,data);if(!process.send||!process.connected)return Promise.reject(new Error('网页聊天需要从桌面客户端启动，请使用 npm start 或客户端 EXE'));const id=randomUUID();return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{webRequests.delete(id);reject(new Error('客户端浏览器响应超时，请打开网页检查状态'))},30000);webRequests.set(id,{resolve,reject,timer});process.send({type:'webchat.command',id,operation,data});});}
 function appendActivity(call) {
@@ -61,16 +75,21 @@ if (process.env.NEXUS_DEV_ORIGIN) allowedOrigins.add(process.env.NEXUS_DEV_ORIGI
 if (process.env.NEXUS_DESKTOP_ORIGIN) allowedOrigins.add(process.env.NEXUS_DESKTOP_ORIGIN);
 const validRequest = req => allowedHosts.has(req.headers.host) && (!req.headers.origin || allowedOrigins.has(req.headers.origin));
 function allowDevOrigin(origin){try{const url=new URL(origin);if(url.protocol==='http:'&&['127.0.0.1','localhost'].includes(url.hostname)&&url.port)allowedOrigins.add(url.origin)}catch{}}
-app.use((req, res, next) => { res.setHeader('Cache-Control', 'no-store'); if (!validRequest(req)) return res.status(403).json({ error: '此控制台只接受本机来源' }); next(); });
+app.use((req, res, next) => { res.setHeader('Cache-Control', 'no-store'); if (!validRequest(req)) return res.status(403).json({ error: '此控制台只接受本机来源' }); if(isShared(req)&&/^\/api\/(?:public-access|dsh)(?:\/|$)/.test(req.path))return res.status(403).json({error:'此设置仅可在本机修改'}); next(); });
 app.use(express.json({ limit: '3mb' }));
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 listener.on('upgrade', (req, socket, head) => {if(relay.accepts(req)){wss.handleUpgrade(req,socket,head,ws=>relay.connect(ws));return;} if (req.url !== '/ws' || !validRequest(req)) { socket.destroy(); return; } wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req)); });
-function emit(type, data) { const value = JSON.stringify({ type, data }); for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 8_000_000) ws.send(value); }
+function emit(type, data) { const value = JSON.stringify({ type, data }); for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 8_000_000 && !(ws.sharedAccess && ['public-access.state','dsh.state'].includes(type))) ws.send(value); }
 replies=new ClientReplies(dataDir,emit,message=>{
- webState={...webState,busy:!message.done,status:message.done?'MCP 回复已接收':'MCP 正在回传回复',replyMode:'mcp'};emit('webchat.state',webState);
- if(message.done)void webCommand('reply.received',{requestId:message.requestId,sessionId:message.sessionId}).catch(()=>{});
+ if(message.source==='api')return;
+ webState={...webState,busy:!message.done,status:message.source==='browser'?'网页回复已同步':message.done?'MCP 回复已接收':'MCP 正在回传回复',replyMode:'mcp'};emit('webchat.state',webState);
+ if(message.done&&message.source!=='api')void webCommand('reply.received',{requestId:message.requestId,sessionId:message.sessionId,source:message.source}).catch(()=>{});
 });
 await replies.init();
+apiModels=new ApiModels(dataDir,{publish:emit,replies,tools:()=>state.phase==='running'?manifest(availableTools()):[],call:(name,args,request)=>rpc(name,args,'api',{sessionId:request.sessionId,requestId:request.requestId,sharedAccessId:request.sharedAccessId}),cancel:request=>child?.connected&&child.send({type:'request.cancel',requestId:request.requestId})});
+await apiModels.init();
+const dsh=new DshRuntime(dataDir,emit);await dsh.init();
+const publicAccess=new PublicAccess(dataDir,{target:`http://127.0.0.1:${port}`,relaySecret:sharedRelaySecret,cloudflared:process.env.CLOUDFLARED_PATH||platform.runtimePaths(path.join(root,'preserved-mcp')).cloudflared,publish:(type,data)=>{if(type==='public-access.revoked'){void apiModels.stopShared(data.accessId);if(child?.connected)child.send({type:'shared.revoke',sharedAccessId:data.accessId});}else emit(type,data);}});
 async function sendChat(data){
  if(state.phase!=='running')throw new Error('请先启动 MCP 服务，并在 GPT 当前对话中启用该 MCP 应用，回复将通过 client_reply 回传');
  if(typeof data.text!=='string'||!data.text.trim()||data.text.length>100000)throw new Error('消息为空或超过 100000 字符');
@@ -83,21 +102,21 @@ const extensions = new ExtensionManager(dataDir,(type,data)=>{
   else emit(type,data);
 });
 await extensions.init();
-function availableTools(){return [...tools.filter(t=>!t.extensionId),...extensions.configuration().tools.map(t=>({name:t.name,description:t.description,extensionId:t.extensionId,readOnly:false}))];}
+function availableTools(){return [...tools.filter(t=>!t.extensionId),...extensions.configuration().tools.map(t=>({...t,readOnly:false}))];}
 function update(next) { state = { ...state, ...next }; emit('service.state', state); }
 function log(text) { for (let line of String(text).split(/\r?\n/)) { line = line.trim(); if (!line) continue; const entry = { id: randomUUID(), at: Date.now(), text: line.slice(0, 2500) }; logs.push(entry); logs = logs.slice(-300); emit('service.log', entry); } }
 const decode = result => { const block = result?.content?.find(b => b.type === 'text'); if (result?.isError) throw new Error(block?.text || '工具执行失败'); try { return JSON.parse(block?.text || '{}'); } catch { return block?.text; } };
 function manifest(items) { return items.map(t => ({ ...t, group: t.extensionId?'外接 MCP':t.name.startsWith('skill')?'技能':t.name.startsWith('terminal_') ? '终端' : t.name.startsWith('file_') ? '文件' : t.name.startsWith('hancode_') ? '浏览器' : '系统与桌面', enabled: !settings.disabled.includes(t.name), calls: calls.filter(c => c.name === t.name).length, running: calls.some(c => c.name === t.name && c.status === 'running') })); }
-function rpc(name, args = {}, origin = 'local') {
+function rpc(name, args = {}, origin = 'local', context = {}) {
   if (!child?.connected || state.phase !== 'running') return Promise.reject(new Error('请先启动 MCP 服务'));
   const id = randomUUID();
-  return new Promise((resolve, reject) => { const timer = setTimeout(() => { pending.delete(id); reject(new Error('本机工具调用超时')); }, 120000); pending.set(id, { resolve, reject, timer }); child.send({ type: 'rpc', id, name, args, origin }); });
+  return new Promise((resolve, reject) => { const timer = setTimeout(() => { pending.delete(id); reject(new Error('本机工具调用超时')); }, 120000); pending.set(id, { resolve, reject, timer }); child.send({ type: 'rpc', id, name, args, origin, context }); });
 }
 function attachTerminal(id) { if (terminal === id) return; terminal = id; terminalCursor = 0; emit('terminal.created', { id }); }
 function handle(message) {
   if (message.type === 'manifest') { tools = message.tools; emit('tools.changed', manifest(availableTools())); }
   if (message.type === 'extension.call') {
-    void (async()=>{try{let result;if(message.operation==='client.context')result=replies.context();else if(message.operation==='client.reply')result=await replies.receive(message.args);else if(message.operation==='skill.read')result=await extensions.readSkill(message.name,message.args?.relativePath);else result=await extensions.call(message.name,message.args);if(child?.connected)child.send({type:'extension.result',id:message.id,result});}catch(e){if(child?.connected)child.send({type:'extension.result',id:message.id,error:e.message});}})();
+    void (async()=>{try{let result;if(message.operation==='browser.debug')result=await webCommand('debug',message.args);else if(message.operation==='client.context')result=replies.context();else if(message.operation==='client.reply')result=await replies.receive(message.args);else if(message.operation==='skill.read')result=await extensions.readSkill(message.name,message.args?.relativePath);else result=await extensions.call(message.name,message.args);if(child?.connected)child.send({type:'extension.result',id:message.id,result});}catch(e){if(child?.connected)child.send({type:'extension.result',id:message.id,error:e.message});}})();
   }
   if (message.type === 'ready') { update({ phase: 'running', url: message.url, localUrl: message.localUrl, startedAt: Date.now(), error: '' }); history = [{ id: randomUUID(), startedAt: state.startedAt, label: 'MCP 远程会话' }, ...history].slice(0, 30); void fs.writeFile(path.join(dataDir, 'history.json'), JSON.stringify(history)).catch(e => log(e.message)); emit('history.changed', history); }
   if (message.type === 'client') update({ lastClient: message.name, clientAt: message.at });
@@ -107,7 +126,7 @@ function handle(message) {
   if (message.type === 'activity') {
     const e = message.event;
     const parse = value => { try { return JSON.parse(value); } catch { return value; } };
-    const call = { id: e.id, source: e.source, name: e.tool, input: parse(e.input), output: e.output === undefined ? undefined : parse(e.output), status: e.phase, startedAt: Date.parse(e.startedAt), endedAt: e.endedAt ? Date.parse(e.endedAt) : undefined };
+    const call = { id: e.id, sessionId:e.sessionId||replies.activeSessionId, requestId:e.requestId, source: e.source, name: e.tool, input: parse(e.input), output: e.output === undefined ? undefined : parse(e.output), status: e.phase, startedAt: Date.parse(e.startedAt), endedAt: e.endedAt ? Date.parse(e.endedAt) : undefined };
     const existing = calls.findIndex(c => c.id === call.id);
     if (existing < 0) calls.push(call); else calls[existing] = call;
     calls = calls.slice(-200);
@@ -141,6 +160,7 @@ async function start() {
   return state;
 }
 async function stop() {
+  await apiModels?.stop();
   await replies.cancel();
   if (stopPromise) return stopPromise;
   if (!child) { await extensions.suspend(); update({ phase: 'stopped', url: '', localUrl: '', error: '' }); return; }
@@ -182,9 +202,29 @@ app.post('/api/webchat/stop',route(async(_req,res)=>{await replies.cancel(webSta
 app.get('/api/models',(_req,res)=>res.json((webState.providers||[]).map(p=>({id:p.id,name:p.name}))));
 app.post('/api/models/select',route(async(req,res)=>{const result=await webCommand('open',{provider:req.body.model});res.json({model:result.provider});}));
 app.post('/api/permissions',route(async(req,res)=>{if(!['readonly','workspace','full'].includes(req.body.mode))throw new Error('权限模式无效');await saveSettings({mode:req.body.mode==='full'?'overdrive':'safe'});res.json({mode:req.body.mode,note:'远程读取直接执行，修改操作在安全模式逐次审批；工作区范围不作为操作系统沙盒'});}));
-app.get('/api/bootstrap', (_req, res) => res.json({ platform: process.platform, terminalShells: Object.keys(platform.terminalShells()), mode: settings.mode, settings, tools: manifest(availableTools()), servers: extensions.list().filter(e=>e.kind==='mcp').map(e=>({id:e.id,name:e.name,url:e.source,connected:e.connected,tools:e.toolCount})), webchat:webState,clientReplies:replies.messages(),extensions:extensions.list(),phase:webState.busy?'executing':'idle', service: state, calls, logs, approvals, history, terminalId: terminal }));
+app.get('/api/bootstrap', (_req, res) => res.json({ platform: process.platform, terminalShells: Object.keys(platform.terminalShells()), mode: settings.mode, remote:isShared(_req),publicAccess:isShared(_req)?undefined:publicAccess.snapshot(),dsh:isShared(_req)?{installed:false,running:false,phase:'local-only',version:'',url:'',error:'',progress:''}:dsh.snapshot(),apiModels:apiModels.list(),apiChats:apiModels.states, settings, tools: manifest(availableTools()), servers: extensions.list().filter(e=>e.kind==='mcp').map(e=>({id:e.id,name:e.name,url:e.source,connected:e.connected,tools:e.toolCount})), webchat:webState,clientReplies:replies.messages(),extensions:extensions.list(),phase:webState.busy?'executing':'idle', service: state, calls, logs, approvals, history, terminalId: terminal }));
+app.get('/api/public-access',(_req,res)=>res.json(publicAccess.snapshot()));
+app.post('/api/public-access/start',route(async(_req,res)=>{res.status(202).json({accepted:true});void publicAccess.start().catch(error=>log('公网入口：'+error.message));}));
+app.post('/api/public-access/stop',route(async(_req,res)=>{await publicAccess.stop();res.json(publicAccess.snapshot());}));
+app.get('/api/dsh',(_req,res)=>res.json(dsh.snapshot()));
+app.post('/api/dsh/install',route(async(_req,res)=>{if(dsh.operation)throw new Error('DSH 正在执行其他操作');res.status(202).json({accepted:true});void dsh.install().catch(error=>log('DSH：'+error.message));}));
+app.post('/api/dsh/start',route(async(_req,res)=>res.json(await dsh.start())));
+app.post('/api/dsh/stop',route(async(_req,res)=>{await dsh.stop();res.json(dsh.snapshot());}));
+app.get('/api/dsh/plugins',route(async(_req,res)=>res.json(await dsh.plugins())));
+app.post('/api/dsh/plugins',route(async(req,res)=>{dsh.validatePlugin(req.body);res.status(202).json({accepted:true});void dsh.plugin(req.body).then(plugins=>emit('dsh.plugins',plugins)).catch(error=>{dsh.update({phase:'error',error:error.message});log('DSH 插件：'+error.message);});}));
+app.get('/api/model-profiles',(_req,res)=>res.json(apiModels.list()));
+app.post('/api/model-profiles',route(async(req,res)=>res.status(201).json(await apiModels.configure(req.body))));
+app.delete('/api/model-profiles/:id',route(async(req,res)=>{await apiModels.remove(req.params.id);res.status(204).end();}));
+app.post('/api/chat/send',route(async(req,res)=>res.status(202).json(await apiModels.start({...req.body,...sharedContext(req)}))));
+app.post('/api/chat/stop',route(async(req,res)=>{await apiModels.stop(req.body.sessionId);res.json({ok:true});}));
 app.get('/api/extensions',(_req,res)=>res.json({items:extensions.list()}));
 app.post('/api/extensions/install',route(async(req,res)=>res.status(202).json(await extensions.install(req.body))));
+app.post('/api/extensions/upload',express.raw({type:'application/octet-stream',limit:'64mb'}),route(async(req,res)=>{
+ const filename=String(req.query.filename||'');if(!/^[^/\\\0]{1,180}\.(?:zip|md|json|mjs|cjs|js|py)$/i.test(filename)||filename==='..')throw new Error('请选择 ZIP、Markdown、MCP JSON 或脚本文件');
+ if(!Buffer.isBuffer(req.body)||!req.body.length)throw new Error('上传文件为空');const kind=String(req.query.kind||'plugin');if(!['plugin','skill'].includes(kind))throw new Error('上传类型无效');
+ const directory=await fs.mkdtemp(path.join(dataDir,'upload-')),file=path.join(directory,filename);await fs.writeFile(file,req.body,{mode:0o600});
+ try{const entry=await extensions.install({kind,name:req.query.name,source:{type:'local',value:file}});const worker=extensions.jobs.get(entry.id)?.worker;if(worker)worker.once('exit',()=>void fs.rm(directory,{recursive:true,force:true}));else await fs.rm(directory,{recursive:true,force:true});res.status(202).json(entry);}catch(error){await fs.rm(directory,{recursive:true,force:true});throw error;}
+}));
 app.patch('/api/extensions/:id',route(async(req,res)=>res.status(202).json(await extensions.enable(req.params.id,req.body.enabled))));
 app.delete('/api/extensions/:id',route(async(req,res)=>{await extensions.remove(req.params.id);res.status(204).end();}));
 app.post('/api/mcp/servers',route(async(req,res)=>{const e=await extensions.install({kind:'mcp',name:req.body.name,source:{type:'mcp',value:req.body.url},headers:req.body.headers});res.status(202).json({id:e.id,name:e.name,url:e.source,connected:e.connected,tools:e.toolCount});}));
@@ -193,7 +233,7 @@ app.post('/api/service/start', route(async (_req, res) => res.json(await start()
 app.post('/api/service/stop', route(async (_req, res) => { await stop(); res.json(state); }));
 app.route('/api/settings').post(route(async (req, res) => res.json(await saveSettings(req.body)))).put(route(async (req, res) => res.json(await saveSettings(req.body))));
 app.put('/api/tools/:name', route(async(req,res)=>{if(!availableTools().some(t=>t.name===req.params.name))return res.status(404).json({error:'工具不存在'});const disabled=settings.disabled.filter(n=>n!==req.params.name);if(req.body.enabled!==true)disabled.push(req.params.name);await saveSettings({disabled});res.json({ok:true});}));
-app.post('/api/tools/call', route(async(req,res)=>{if(typeof req.body.name!=='string')throw new Error('需要工具名称 name');res.json(await rpc(req.body.name,req.body.args||{}));}));
+app.post('/api/tools/call', route(async(req,res)=>{if(typeof req.body.name!=='string')throw new Error('需要工具名称 name');res.json(await rpc(req.body.name,req.body.args||{},isShared(req)?'shared':'local',sharedContext(req)));}));
 app.get('/api/prompt/default', (_req, res) => res.json({ prompt: instructions }));
 app.post('/api/approvals/:id', (req, res) => { if (!approvals.some(a => a.id === req.params.id && a.expiresAt>Date.now())) return res.status(404).json({ error: '审批已过期或已处理' }); child?.send({ type: 'approval', id: req.params.id, allowed: req.body.allowed === true }); res.json({ ok: true }); });
 app.get('/api/fs/list', route(async (req, res) => { const target = path.resolve(String(req.query.path || os.homedir())); const entries = await fs.readdir(target, { withFileTypes: true }); const rows = await Promise.all(entries.slice(0, 2000).map(async e => { let size; try { if (e.isFile()) size = (await fs.stat(path.join(target, e.name))).size; } catch {} return { name: e.name, path: path.join(target, e.name), directory: e.isDirectory(), size }; })); res.json({ path: target, entries: rows.sort((a,b) => Number(b.directory)-Number(a.directory) || a.name.localeCompare(b.name)) }); }));
@@ -202,7 +242,9 @@ app.use('/api', (_req, res) => res.status(404).json({ error: '接口不存在' }
 app.use(express.static(path.join(root, 'frontend/dist')));
 app.get('/', (_req, res) => res.status(503).send('前端尚未构建，请执行 npm run build。'));
 app.use((e, _req, res, _next) => { if (!res.headersSent) res.status(400).json({ error: e.message || '本机请求失败' }); });
-wss.on('connection', ws => {
+wss.on('connection', (ws,request) => {
+  const uiRpc=(name,args={},origin='local')=>rpc(name,args,origin==='preview'?'preview':isShared(request)?'shared':'local',sharedContext(request));
+  ws.sharedAccess=isShared(request);
   ws.screen = false;
   ws.on('message', async raw => {
     try {
@@ -211,11 +253,11 @@ wss.on('connection', ws => {
       else if(type==='agent.run'){await sendChat(data);}
       else if(type==='webchat.stop'){await replies.cancel(webState.sessionId);await webCommand('stop');webState={...webState,busy:false,status:'已停止等待 MCP 回复'};emit('webchat.state',webState);}
       else if (type === 'mode.change') await saveSettings({mode:data.mode});
-      else if (type === 'terminal.create') { const shells = platform.terminalShells(); const name = data.shell || 'default'; if (!Object.hasOwn(shells, name)) throw new Error('当前系统不支持此终端环境'); const result = decode(await rpc('terminal_create', { shell: shells[name], cols: data.cols, rows: data.rows })); attachTerminal(result.id); }
-      else if (type === 'terminal.input') decode(await rpc('terminal_write', { id: data.id, data: data.text }));
-      else if (type === 'terminal.resize') decode(await rpc('terminal_resize', data, 'preview'));
-      else if (type === 'terminal.close') { decode(await rpc('terminal_close', data)); terminal = null; emit('terminal.closed', {}); }
-      else if (type === 'gui.mouse') decode(await rpc('desktop_action', data));
+      else if (type === 'terminal.create') { const shells = platform.terminalShells(); const name = data.shell || 'default'; if (!Object.hasOwn(shells, name)) throw new Error('当前系统不支持此终端环境'); const result = decode(await uiRpc('terminal_create', { shell: shells[name], cols: data.cols, rows: data.rows })); attachTerminal(result.id); }
+      else if (type === 'terminal.input') decode(await uiRpc('terminal_write', { id: data.id, data: data.text }));
+      else if (type === 'terminal.resize') decode(await uiRpc('terminal_resize', data, 'preview'));
+      else if (type === 'terminal.close') { decode(await uiRpc('terminal_close', data)); terminal = null; emit('terminal.closed', {}); }
+      else if (type === 'gui.mouse') decode(await uiRpc('desktop_action', data));
       else if (type === 'agent.stop') {if(webState.busy){await replies.cancel(webState.sessionId);await webCommand('stop');}else await stop();}
     } catch (e) { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', data: { message: e.message } })); }
   });
@@ -236,7 +278,7 @@ const screenTimer = setInterval(async () => {
 let previous = os.cpus().map(c => c.times);
 const metricsTimer = setInterval(() => { const next = os.cpus().map(c => c.times); let total = 0, idle = 0; next.forEach((t, i) => { idle += t.idle - (previous[i]?.idle || 0); for (const k in t) total += t[k] - (previous[i]?.[k] || 0); }); previous = next; emit('telemetry', { cpu: total ? (1-idle/total)*100 : 0, memory: (1-os.freemem()/os.totalmem())*100 }); }, 2000);
 let closing = false;
-async function shutdown() { if (closing) return; closing = true; clearInterval(streamTimer); clearInterval(screenTimer); clearInterval(metricsTimer); relay.close(); await stop(); await extensions.dispose(); for (const ws of wss.clients) ws.terminate(); wss.close(); listener.closeAllConnections(); listener.close(() => process.exit()); }
+async function shutdown() { if (closing) return; closing = true; clearInterval(streamTimer); clearInterval(screenTimer); clearInterval(metricsTimer); relay.close(); await publicAccess.stop(); await dsh.dispose(); await stop(); await extensions.dispose(); for (const ws of wss.clients) ws.terminate(); wss.close(); listener.closeAllConnections(); listener.close(() => process.exit()); }
 process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown);
 console.log(`NexusMCP Studio 控制台：http://127.0.0.1:${port}`);
 console.log('MCP 默认停止。请在控制台点击“启动 MCP”。');

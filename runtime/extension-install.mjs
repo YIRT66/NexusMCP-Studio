@@ -60,13 +60,13 @@ async function discoverSkills(directory,base=directory,depth=0,result=[]){
  }}return result;
 }
 async function readManifest(directory){
- for(const name of ['nexus-plugin.json','plugin.json','.claude-plugin/plugin.json','.codex-plugin/plugin.json']){const value=await json(path.join(directory,name));if(value)return value}
+ for(const name of ['nexus-plugin.json','plugin.json','.claude-plugin/plugin.json','.codex-plugin/plugin.json','dsh-plugin.json','.dsh-plugin/plugin.json']){const value=await json(path.join(directory,name));if(value)return value}
  return {};
 }
 async function inspect(directory,kind){
  const manifest=await readManifest(directory);const pkg=await json(path.join(directory,'package.json'))||{};
  let config=manifest.mcpServers||pkg.mcpServers;
- for(const name of ['.mcp.json','mcp.json']){const value=await json(path.join(directory,name));if(value){config=value.mcpServers||value;break}}
+ for(const name of ['.mcp.json','mcp.json','.dsh/mcp.json']){const value=await json(path.join(directory,name));if(value){config=value.mcpServers||value;break}}
  if(!config&&manifest.mcp)config={default:manifest.mcp};
  if(!config&&pkg.nexusMcp)config={default:typeof pkg.nexusMcp==='string'?{command:'node',args:[pkg.nexusMcp]}:pkg.nexusMcp};
  if(!config&&pkg.bin){const bin=typeof pkg.bin==='string'?pkg.bin:Object.values(pkg.bin)[0];if(bin)config={default:{command:'node',args:[bin]}}}
@@ -74,6 +74,7 @@ async function inspect(directory,kind){
  if(kind!=='skill'&&config){if(typeof config!=='object'||Array.isArray(config))throw new Error('mcpServers 必须是对象');for(const [name,value] of Object.entries(config)){if(!value||typeof value!=='object')throw new Error('MCP 配置格式无效');if(value.url){const url=new URL(value.url);if(!['http:','https:'].includes(url.protocol))throw new Error('MCP 地址仅支持 HTTP/HTTPS');servers.push({name,url:url.href,headers:value.headers||{}})}else if(typeof value.command==='string'&&value.command){if(value.args&&!Array.isArray(value.args))throw new Error('MCP args 必须是数组');servers.push({name,command:value.command,args:value.args||[],env:value.env||{},cwd:value.cwd})}else throw new Error('MCP 服务缺少 url 或 command')}}
  if(servers.length>20)throw new Error('单个扩展最多配置 20 个 MCP 服务');
  const skills=await discoverSkills(directory);
+ if(!servers.length&&!skills.length&&pkg.dsh)throw new Error('检测到 DSH 原生插件，请在「DSH 原生」中安装，由官方兼容引擎运行。');
  if(!servers.length&&!skills.length)throw new Error('未发现可用入口。技能需要 SKILL.md；插件需要 nexus-plugin.json / .mcp.json、package.json 的 nexusMcp/bin 或技能目录。');
  return {name:String(manifest.name||pkg.name||(kind==='skill'&&skills.length===1?skills[0].name:null)||path.basename(directory)).slice(0,150),description:String(manifest.description||pkg.description||(kind==='skill'&&skills.length===1?skills[0].description:'')).slice(0,2000),version:String(manifest.version||pkg.version||'1.0.0').slice(0,80),servers,skills};
 }

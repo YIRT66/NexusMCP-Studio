@@ -31,6 +31,7 @@ async function clientStatus() {
     connectionStatus(state.connected ? 'connected' : connecting ? 'connecting' : 'disconnected', state.connected ? '已连接' : connecting ? '连接中' : '未连接');
     element('connection-description').textContent = state.connected ? '客户端已连接，网页回复将通过 MCP 回到软件。' : connecting ? '正在连接本机客户端，请稍候…' : state.endpoint ? '客户端暂未连接。请确认软件正在运行，扩展会自动重试。' : '粘贴客户端提供的地址，开始使用网页聊天。';
     element('disconnect').hidden = !state.endpoint;
+    element('bind-active').hidden = !state.connected;
     element('provider').textContent = state.connected ? names[state.provider] || 'AI 网页' : '尚未绑定';
     element('session-title').textContent = state.connected && state.url ? '继续当前对话' : state.connected ? '为当前聊天打开网页' : '让对话接着发生';
     element('binding').textContent = !state.connected ? '连接客户端后，在软件中为当前聊天打开 AI 网页。' : state.url ? '当前会话已绑定网页。连续消息会复用同一个对话。' : '回到客户端，点击「为当前聊天打开网页」完成绑定。';
@@ -140,3 +141,10 @@ element('dismiss-notice').addEventListener('click', () => notice());
 void refresh();
 const timer = setInterval(refresh, 1500);
 window.addEventListener('pagehide', () => clearInterval(timer), { once: true });
+
+element('bind-active').addEventListener('click',async()=>{try{const result=await chrome.runtime.sendMessage({type:'nexus.bind-active'});if(!result||result.error)throw new Error(result?.error||'绑定失败');notice();await refresh();}catch(error){notice(error.message);}});
+element('debug-enable').addEventListener('click',()=>{
+ const permission=chrome.permissions.request({permissions:['debugger']});
+ void permission.then(async granted=>{if(!granted)throw new Error('尚未授权网页调试');const result=await chrome.runtime.sendMessage({type:'nexus.debug-enable'});if(result?.error)throw new Error(result.error);notice('当前绑定网页已开启调试。浏览器提示条关闭后，调试会断开。');}).catch(error=>notice(error.message));
+});
+element('debug-disable').addEventListener('click',async()=>{try{const result=await chrome.runtime.sendMessage({type:'nexus.debug-disable'});if(result?.error)throw new Error(result.error);notice('网页调试已关闭');}catch(error){notice(error.message);}});

@@ -8,6 +8,7 @@ import {applyWebchatState,type BrowserLink} from '../browser-link';
 import type {WebchatState} from '../types';
 import {UISelect} from './UISelect';
 import {AIAvatar} from './AIAvatar';
+import {BrowserConsole} from './BrowserConsole';
 
 export const aiSites=[{id:'chatgpt',name:'ChatGPT'},{id:'claude',name:'Claude'},{id:'deepseek',name:'DeepSeek'},{id:'gemini',name:'Gemini'},{id:'qwen',name:'Qwen'},{id:'kimi',name:'Kimi'},{id:'doubao',name:'豆包'}];
 interface Props {
@@ -21,6 +22,7 @@ export function AIBrowserPanel({suspended,onClose,onConnect,link,opening,pageErr
  const host=useRef<HTMLDivElement>(null);
  const[error,setError]=useState(''),[loading,setLoading]=useState(false),[url,setUrl]=useState(''),[revision,setRevision]=useState(0),[copied,setCopied]=useState(false);
  const copyTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
+ const[consoleOpen,setConsoleOpen]=useState(false);
  const external=link.external,working=loading||opening;
  const aiName=aiSites.find(site=>site.id===s.webchat.provider)?.name||'AI';
  const panelWidth=viewport<=650?'100%':viewport<=1100?'70%':'45%';
@@ -40,7 +42,7 @@ export function AIBrowserPanel({suspended,onClose,onConnect,link,opening,pageErr
   };
   update();const observer=new ResizeObserver(update);if(host.current)observer.observe(host.current);window.addEventListener('resize',update);
   return()=>{observer.disconnect();window.removeEventListener('resize',update);window.nexusDesktop?.browserBounds(null);};
- },[suspended,working,error,revision,s.webchat.provider,external,entered,present]);
+ },[suspended,working,error,revision,s.webchat.provider,external,entered,present,consoleOpen]);
  async function transport(value:string){
   setError('');setLoading(true);
   try{applyWebchatState(await request<WebchatState>('/webchat/transport',{transport:value}));}
@@ -101,6 +103,7 @@ export function AIBrowserPanel({suspended,onClose,onConnect,link,opening,pageErr
     </details>}
    </div></div>:working?<span><LoaderCircle size={18} className="spin"/>正在打开网页…</span>:<span>网页在这里显示。也可切换到 Edge / Chrome 扩展。</span>}
   </div>
-  <footer title={link.detail}>{link.label}{link.bound?' · 继续使用当前聊天对应的网页':''}</footer>
+  {consoleOpen&&<BrowserConsole/>}
+  <footer title={link.detail}><span>{link.label}</span><button aria-expanded={consoleOpen} onClick={()=>setConsoleOpen(value=>!value)}>{consoleOpen?'收起控制台':'打开控制台'}</button></footer>
  </motion.aside>;
 }

@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('nexusDesktop', {
   getRuntimeURL:()=>ipcRenderer.invoke('desktop:get-runtime'),
+  openDsh:()=>ipcRenderer.invoke('desktop:open-dsh'),
   openBrowserPlugin:()=>ipcRenderer.invoke('desktop:open-browser-plugin'),
   webchat:(operation,data)=>ipcRenderer.invoke('webchat:command',operation,data),
   browserBounds:rect=>ipcRenderer.send('webchat:bounds',rect),

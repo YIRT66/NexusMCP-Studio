@@ -1,6 +1,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {AnimatePresence,motion,useReducedMotion} from 'framer-motion';
 import {createPortal} from 'react-dom';
+import {DshPanel} from './DshPanel';
 import {UISelect} from './UISelect';
 import {BookOpen,Check,ChevronDown,Download,FolderOpen,GitBranch,Link,LoaderCircle,Package,Plus,Puzzle,RefreshCw,Search,Trash2,X} from 'lucide-react';
 import {useStudio} from '../store';
@@ -12,7 +13,7 @@ function errorText(error:unknown){const message=error instanceof Error?error.mes
 export function ExtensionManager({renderBuiltins}:{renderBuiltins:()=>React.ReactNode}){
   const connected=useStudio(s=>s.connected);
   const [items,setItems]=useState<ExtensionEntry[]>([]);
-  const [filter,setFilter]=useState<'all'|ExtensionKind|'builtin'>('all');
+  const [filter,setFilter]=useState<'all'|ExtensionKind|'builtin'|'dsh'>('all');
   const [query,setQuery]=useState('');
   const [installing,setInstalling]=useState(false);
   const [loading,setLoading]=useState(false);
@@ -39,8 +40,8 @@ export function ExtensionManager({renderBuiltins}:{renderBuiltins:()=>React.Reac
   return <section className="extensions-page">
     <div className="shell-section-heading"><h1>插件</h1><button className="extension-install-button" onClick={()=>setInstalling(true)}><Plus size={14}/>安装插件或技能</button></div>
     <p className="extensions-intro">把常用工具和技能，接入你的工作空间。</p>
-    <div className="extension-toolbar"><nav aria-label="扩展类型">{([{id:'all',label:'全部'},{id:'plugin',label:'插件'},{id:'skill',label:'技能'},{id:'mcp',label:'MCP'},{id:'builtin',label:'内置工具'}] as const).map(tab=><button key={tab.id} className={filter===tab.id?'active':''} aria-pressed={filter===tab.id} onClick={()=>setFilter(tab.id)}>{tab.label}{tab.id==='all'&&items.length>0&&<span>{items.length}</span>}</button>)}</nav><button className="extension-refresh" title="刷新扩展列表" aria-label="刷新扩展列表" disabled={!connected||loading} onClick={()=>void reload()}><RefreshCw size={14} className={loading?'spin':''}/></button></div>
-    {filter==='builtin'?renderBuiltins():<>
+    <div className="extension-toolbar"><nav aria-label="扩展类型">{([{id:'all',label:'全部'},{id:'plugin',label:'插件'},{id:'skill',label:'技能'},{id:'mcp',label:'MCP'},{id:'dsh',label:'DSH 原生'},{id:'builtin',label:'内置工具'}] as const).map(tab=><button key={tab.id} className={filter===tab.id?'active':''} aria-pressed={filter===tab.id} onClick={()=>setFilter(tab.id)}>{tab.label}{tab.id==='all'&&items.length>0&&<span>{items.length}</span>}</button>)}</nav><button className="extension-refresh" title="刷新扩展列表" aria-label="刷新扩展列表" disabled={!connected||loading} onClick={()=>void reload()}><RefreshCw size={14} className={loading?'spin':''}/></button></div>
+    {filter==='builtin'?renderBuiltins():filter==='dsh'?<DshPanel/>:<>
       <label className="shell-search"><Search size={15}/><input aria-label="搜索插件和技能" placeholder="搜索插件和技能" value={query} onChange={event=>setQuery(event.target.value)}/></label>
       {error&&<p className="extension-error" role="alert">{error}<button onClick={()=>void reload()} disabled={loading}>重试</button></p>}
       {loading&&!loaded?<div className="extension-skeletons" aria-label="正在读取扩展列表">{[0,1,2].map(item=><div key={item}><i/><span/><b/></div>)}</div>:filtered.length?<div className="extension-list">{filtered.map(item=>{
@@ -62,11 +63,12 @@ function ExtensionInstaller({connected,onClose,onInstalled,reduced}:{connected:b
   const [picking,setPicking]=useState(false);
   const [error,setError]=useState('');
   const root=useRef<HTMLDivElement>(null);
+  const upload=useRef<HTMLInputElement>(null);const[file,setFile]=useState<File|null>(null);
   const tween={type:'tween' as const,duration:reduced?0:0.22,ease};
   useEffect(()=>{const previous=document.activeElement as HTMLElement;const layout=document.querySelector<HTMLElement>('.shell-layout');const wasInert=layout?.inert;if(layout)layout.inert=true;root.current?.querySelector<HTMLButtonElement>('[aria-label="关闭安装窗口"]')?.focus();return()=>{if(layout)layout.inert=!!wasInert;if(previous?.isConnected)previous.focus();};},[]);
   async function choose(directory:boolean){
     setPicking(true);setError('');
-    try{if(!window.nexusDesktop?.selectExtensionPath){setError('请填写本地完整路径，或使用桌面开发版选择文件。');return;}const selected=await window.nexusDesktop.selectExtensionPath(directory);if(selected)setValue(selected);}catch(e){setError(errorText(e));}finally{setPicking(false);}
+    try{if(!window.nexusDesktop?.selectExtensionPath){upload.current?.click();return;}const selected=await window.nexusDesktop.selectExtensionPath(directory);if(selected){setFile(null);setValue(selected);}}catch(e){setError(errorText(e));}finally{setPicking(false);}
   }
   async function install(){
     const raw=value.trim();setError('');
@@ -76,7 +78,7 @@ function ExtensionInstaller({connected,onClose,onInstalled,reduced}:{connected:b
     if(type==='git'&&!/^(https?:\/\/|ssh:\/\/|git@)/.test(raw)){setError('请输入 Git 仓库的 HTTPS 或 SSH 地址。');return;}
     const body:InstallExtension={kind,name:name.trim()||undefined,source:{type,value:raw}};
     setBusy(true);
-    try{await extensionsApi.install(body);onInstalled();}catch(e){setError(errorText(e));}finally{setBusy(false);}
+    try{if(file&&source==='local'&&kind!=='mcp'){const response=await fetch('/api/extensions/upload?'+new URLSearchParams({filename:file.name,kind,name:name.trim()}),{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});const result=await response.json();if(!response.ok)throw new Error(result.error||'上传失败');}else await extensionsApi.install(body);onInstalled();}catch(e){setError(errorText(e));}finally{setBusy(false);}
   }
   return <motion.div className="extension-install-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={tween} onMouseDown={event=>{if(event.target===event.currentTarget&&!busy)onClose();}}><motion.div ref={root} role="dialog" aria-modal="true" aria-label="安装插件或技能" className="extension-install-dialog" initial={{opacity:0,y:reduced?0:12,scale:reduced?1:.98}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:reduced?0:7,scale:reduced?1:.985}} transition={tween} onKeyDown={event=>{
     if((event.ctrlKey||event.metaKey)&&event.key===','){event.preventDefault();event.stopPropagation();return;}
@@ -84,10 +86,11 @@ function ExtensionInstaller({connected,onClose,onInstalled,reduced}:{connected:b
     if(event.key!=='Tab')return;const elements=root.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled)');if(!elements?.length)return;const first=elements[0],last=elements[elements.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
   }}>
     <header><div><h2>安装插件或技能</h2><p>按自己的工作方式扩展应用。</p></div><button aria-label="关闭安装窗口" disabled={busy} onClick={onClose}><X size={18}/></button></header>
-    <div className="extension-installer-content"><div className="extension-kind-picker" aria-label="安装类型">{([{kind:'plugin',icon:Puzzle,title:'插件',detail:'扩展工具能力'},{kind:'skill',icon:BookOpen,title:'技能',detail:'添加工作方法'},{kind:'mcp',icon:Link,title:'MCP',detail:'连接外部服务'}] as const).map(entry=><button key={entry.kind} className={kind===entry.kind?'active':''} aria-pressed={kind===entry.kind} disabled={busy} onClick={()=>{setKind(entry.kind);setValue('');setError('');}}><entry.icon size={19}/><strong>{entry.title}</strong><small>{entry.detail}</small>{kind===entry.kind&&<Check size={11}/>}</button>)}</div>
-    {kind!=='mcp'&&<div className="extension-source-label">安装来源<UISelect label="安装来源" value={source} disabled={busy} onChange={value=>{setSource(value as typeof source);setValue('');setError('');}} options={[{value:'local',label:'本地文件或文件夹'},{value:'git',label:'Git 仓库'},{value:'registry',label:'包管理器'}]}/></div>}
-    <label className="settings-field">{kind==='mcp'?'服务地址':source==='local'?'本地路径':source==='git'?'仓库地址':'包名'}<div className="extension-source-input">{kind==='mcp'?<Link size={16}/>:source==='local'?<FolderOpen size={16}/>:source==='git'?<GitBranch size={16}/>:<Package size={16}/>}<input aria-label="扩展安装来源" value={value} disabled={busy} onChange={event=>setValue(event.target.value)} placeholder={kind==='mcp'?'https://example.com/mcp':source==='local'?(kind==='skill'?'选择 SKILL.md、技能文件夹或压缩包':'选择插件文件、文件夹或压缩包'):source==='git'?'https://github.com/owner/repository':'npm:包名 或 pypi:包名'}/></div></label>
-    {kind!=='mcp'&&source==='local'&&<div className="extension-file-actions"><button className="shell-outline-button" disabled={busy||picking} onClick={()=>void choose(false)}><Download size={14}/>选择文件</button><button className="shell-outline-button" disabled={busy||picking} onClick={()=>void choose(true)}><FolderOpen size={14}/>选择文件夹</button></div>}
+    <div className="extension-installer-content"><div className="extension-kind-picker" aria-label="安装类型">{([{kind:'plugin',icon:Puzzle,title:'插件',detail:'扩展工具能力'},{kind:'skill',icon:BookOpen,title:'技能',detail:'添加工作方法'},{kind:'mcp',icon:Link,title:'MCP',detail:'连接外部服务'}] as const).map(entry=><button key={entry.kind} className={kind===entry.kind?'active':''} aria-pressed={kind===entry.kind} disabled={busy} onClick={()=>{setKind(entry.kind);setFile(null);setValue('');setError('');}}><entry.icon size={19}/><strong>{entry.title}</strong><small>{entry.detail}</small>{kind===entry.kind&&<Check size={11}/>}</button>)}</div>
+    {kind!=='mcp'&&<div className="extension-source-label">安装来源<UISelect label="安装来源" value={source} disabled={busy} onChange={value=>{setSource(value as typeof source);setFile(null);setValue('');setError('');}} options={[{value:'local',label:'本地文件或文件夹'},{value:'git',label:'Git 仓库'},{value:'registry',label:'包管理器'}]}/></div>}
+    <label className="settings-field">{kind==='mcp'?'服务地址':source==='local'?'本地路径':source==='git'?'仓库地址':'包名'}<div className="extension-source-input">{kind==='mcp'?<Link size={16}/>:source==='local'?<FolderOpen size={16}/>:source==='git'?<GitBranch size={16}/>:<Package size={16}/>}<input aria-label="扩展安装来源" value={value} disabled={busy} onChange={event=>{setFile(null);setValue(event.target.value);}} placeholder={kind==='mcp'?'https://example.com/mcp':source==='local'?(kind==='skill'?'选择 SKILL.md、技能文件夹或压缩包':'选择插件文件、文件夹或压缩包'):source==='git'?'https://github.com/owner/repository':'npm:包名 或 pypi:包名'}/></div></label>
+    <input ref={upload} hidden type="file" accept=".zip,.md,.json,.mjs,.cjs,.js,.py" onChange={e=>{const next=e.target.files?.[0];if(!next)return;if(next.size>64*1024*1024){setError('文件不能超过 64 MB');return;}setFile(next);setValue(next.name);setError('');}}/>
+    {kind!=='mcp'&&source==='local'&&<div className="extension-file-actions"><button className="shell-outline-button" disabled={busy||picking} onClick={()=>void choose(false)}><Download size={14}/>{window.nexusDesktop?'选择文件':'上传文件 / ZIP'}</button>{window.nexusDesktop&&<button className="shell-outline-button" disabled={busy||picking} onClick={()=>void choose(true)}><FolderOpen size={14}/>选择文件夹</button>}</div>}
     <label className="settings-field">名称 <span className="field-optional">选填</span><input value={name} disabled={busy} onChange={event=>setName(event.target.value)} placeholder="默认使用扩展自身的名称"/></label>
     <p className="extension-source-hint">{kind==='mcp'?'添加你自己的 MCP 服务地址。':kind==='skill'?'支持导入自定义技能文件、技能目录或仓库，具体格式由安装器识别。':'可以导入自己的插件包或仓库，具体格式与依赖由安装器处理。'}</p>
     {!connected&&<p className="settings-offline">本地运行时未连接，连接后即可提交安装。</p>}{error&&<p className="settings-error" role="alert">{error}</p>}

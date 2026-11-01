@@ -10,7 +10,7 @@ const target=path.join(output,'NexusMCP-Service');
 const expected=path.relative(output,target);
 if(expected!=='NexusMCP-Service'||!path.isAbsolute(target))throw new Error('服务输出路径校验失败');
 const runtimeFiles=(await fs.readdir(path.join(root,'runtime'))).filter(file=>file.endsWith('.mjs')&&!/\.test\.mjs$|-smoke\.mjs$|-fixture\.mjs$/.test(file));
-for(const file of ['server.mjs','extensions.mjs','extension-install.mjs','webchat-relay.mjs','client-replies.mjs'])if(!runtimeFiles.includes(file))throw new Error('缺少服务模块：'+file);
+for(const file of ['server.mjs','extensions.mjs','extension-install.mjs','webchat-relay.mjs','client-replies.mjs','api-models.mjs','dsh-runtime.mjs','public-access.mjs'])if(!runtimeFiles.includes(file))throw new Error('缺少服务模块：'+file);
 const nodeName=process.platform==='win32'?'node.exe':'node';
 const tunnelName=process.platform==='win32'?'cloudflared.exe':'cloudflared';
 const required=['platform.cjs','linux-system.mjs','server.mjs','tools.mjs','browser.mjs','page-control.mjs','extension-bridge.mjs',`runtime/${nodeName}`,`bin/${tunnelName}`,'node_modules/@modelcontextprotocol/sdk/package.json','node_modules/@lydell/node-pty/package.json','node_modules/playwright-core/package.json','node_modules/ws/package.json','node_modules/npm/bin/npm-cli.js','node_modules/isomorphic-git/package.json','node_modules/fflate/package.json','node_modules/yaml/package.json'];
@@ -23,12 +23,16 @@ await fs.cp(path.join(root,'preserved-mcp'),path.join(target,'preserved-mcp'),{r
  return !/^(data|test|tests|\.git)(\/|$)/.test(rel)&&!['PUBLIC-MCP-URL.txt','.gitignore'].includes(rel);
 }});
 await fs.mkdir(path.join(target,'runtime'),{recursive:true});
+await fs.cp(path.join(root,'browser-plugin'),path.join(target,'browser-plugin'),{recursive:true});
+await fs.cp(path.join(root,'frontend/dist'),path.join(target,'frontend/dist'),{recursive:true});
+for(const file of ['turn-tracker.js','debug-controller.js'])await fs.access(path.join(target,'browser-plugin',file));
 for(const file of runtimeFiles)await fs.copyFile(path.join(root,'runtime',file),path.join(target,'runtime',file));
 await fs.writeFile(path.join(target,'package-manifest.json'),JSON.stringify({builtAt:new Date().toISOString(),platform:process.platform,arch:process.arch,runtimeFiles},null,2));
 await fs.copyFile(path.join(root,'docs/CLIENT-SERVICE-INTEGRATION.md'),path.join(target,'客户端接入说明.md'));
 await fs.copyFile(path.join(root,'docs/SERVICE-README.md'),path.join(target,'使用说明.md'));
 await fs.mkdir(path.join(target,'docs'),{recursive:true});
 await fs.copyFile(path.join(root,'docs/LINUX.md'),path.join(target,'docs/LINUX.md'));
+await fs.copyFile(path.join(root,'docs/WORKSPACE-FEATURES.md'),path.join(target,'docs/WORKSPACE-FEATURES.md'));
 await fs.copyFile(path.join(root,'docs/EXTENSIONS-API.md'),path.join(target,'插件与技能接口.md'));
 if(process.platform==='win32'){
 await fs.writeFile(path.join(target,'START-SERVICE.bat'),'@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\npreserved-mcp\\runtime\\node.exe runtime\\server.mjs\r\npause\r\n');

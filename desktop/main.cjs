@@ -183,6 +183,14 @@ if (!app.requestSingleInstanceLock()) {
     await startRuntime();
     logStartup('runtime:ready',{url:runtimeUrl});
     ipcMain.handle('desktop:get-runtime',event=>event.sender===mainWindow?.webContents?runtimeUrl:null);
+    ipcMain.handle('desktop:open-dsh',async event=>{
+      if(!mainWindow||event.sender!==mainWindow.webContents)throw new Error('无效窗口');
+      const state=await fetch(runtimeUrl+'/api/dsh').then(response=>response.json());
+      const url=new URL(state.url);if(!state.running||url.protocol!=='http:'||url.hostname!=='127.0.0.1')throw new Error('DSH 工作台尚未启动');
+      const window=new BrowserWindow({parent:mainWindow,width:1200,height:850,title:'NexusMCP · DSH 插件工作台',autoHideMenuBar:true,webPreferences:{partition:'persist:nexus-dsh',nodeIntegration:false,contextIsolation:true,sandbox:true}});
+      window.webContents.setWindowOpenHandler(({url})=>{openLink(url);return {action:'deny'};});
+      await window.loadURL(url.href);
+    });
     ipcMain.handle('desktop:open-browser-plugin',async event=>{
       if(event.sender!==mainWindow?.webContents)return;
       let directory=path.join(root,'browser-plugin');

@@ -3,7 +3,7 @@ declare global {
   interface Window {
     nexusDesktop?: {
       getRuntimeURL:()=>Promise<string|null>;
-      openBrowserPlugin:()=>Promise<string>;
+      openDsh?:()=>Promise<void>;openBrowserPlugin:()=>Promise<string>;
       webchat:(operation:string,data?:unknown)=>Promise<any>;
       browserBounds:(rect:{x:number;y:number;width:number;height:number}|null)=>void;
       onWebchat:(callback:(event:{type:string;data:any})=>void)=>()=>void;

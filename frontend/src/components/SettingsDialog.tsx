@@ -4,9 +4,11 @@ import { X, Settings2, Shield, Puzzle, KeyRound, Sun, Moon, Monitor, Plus, Trash
 import { useStudio } from '../store';
 import { request } from '../connection';
 import type { Settings } from '../types';
+import {ApiModelSettings} from './ApiModelSettings';
 import {UISelect} from './UISelect';
+import {PublicAccessSettings} from './PublicAccessSettings';
 
-type Tab = 'general' | 'model' | 'mcp' | 'permissions';
+type Tab = 'general' | 'model' | 'mcp' | 'permissions' | 'public';
 const tabs = [{ id: 'general', icon: Settings2, label: '通用设置' }, { id: 'model', icon: KeyRound, label: '模型' }, { id: 'mcp', icon: Puzzle, label: '插件连接' }, { id: 'permissions', icon: Shield, label: '操作权限' }] as const;
 const ease = [0.22, 1, 0.36, 1] as const;
 export function SettingsDialog({initialTab='general'}:{initialTab?:Tab}) {
@@ -63,7 +65,7 @@ export function SettingsDialog({initialTab='general'}:{initialTab?:Tab}) {
     }}>
       <header className="settings-dialog-header"><h2>设置</h2><button className="settings-close" aria-label="关闭设置" onClick={close}><X size={18} /></button></header>
       <div className="settings-dialog-body">
-        <nav className="settings-dialog-nav" aria-label="设置分类">{tabs.map(({ id, icon: Icon, label }) => <button key={id} className={tab === id ? 'active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => { setTab(id); setError(''); setSaved(false); }}>
+        <nav className="settings-dialog-nav" aria-label="设置分类">{[...tabs,...(s.remote?[]:[{id:'public' as const,icon:Monitor,label:'公网远控'}])].map(({ id, icon: Icon, label }) => <button key={id} className={tab === id ? 'active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => { setTab(id); setError(''); setSaved(false); }}>
           {tab === id && <motion.span className="settings-tab-indicator" layoutId="settings-tab-indicator" transition={tween} />}<Icon size={16} /><span>{label}</span>
         </button>)}</nav>
         <div className="settings-dialog-scroll"><AnimatePresence mode="wait" initial={false}><motion.div key={tab} className="settings-dialog-content" initial={{ opacity: 0, x: reduced ? 0 : 6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: reduced ? 0 : -4 }} transition={{ ...tween, duration: reduced ? 0 : 0.13 }}>
@@ -76,13 +78,8 @@ export function SettingsDialog({initialTab='general'}:{initialTab?:Tab}) {
             <div className="settings-row"><div><strong>打开设置</strong><p>在任意页面快速打开</p></div><kbd>Ctrl + ,</kbd></div>
             <p className="settings-caption">外观设置即时生效，自动保存在本机。</p>
           </>}
-          {tab === 'model' && <><h3 className="settings-section-title">模型</h3><p className="settings-description">配置当前工作空间使用的模型。</p>
-            <div className="settings-field">服务商<UISelect label="服务商" placeholder="选择服务商" value={draft.provider} onChange={value=>{setDraft({...draft,provider:value});setSaved(false);}} options={['OpenAI','Claude','DeepSeek','Gemini','Ollama','兼容接口'].map(provider=>({value:provider,label:provider}))}/></div>
-            <label className="settings-field">API 地址<input value={draft.baseUrl} placeholder="https://api.example.com/v1" onChange={event => {setDraft({ ...draft, baseUrl: event.target.value });setSaved(false);}} /></label>
-            <label className="settings-field">模型名称<input value={draft.model} placeholder="输入模型名称" onChange={event => {setDraft({ ...draft, model: event.target.value });setSaved(false);}} /></label>
-            <label className="settings-field">API Key<input type="password" autoComplete="off" value={draft.apiKey} placeholder="输入密钥" onChange={event => {setDraft({ ...draft, apiKey: event.target.value });setSaved(false);}} /></label>
-            <p className="settings-caption">密钥只提交给本地运行时，不写入界面存储。</p>
-          </>}
+          {tab === 'model' && <ApiModelSettings/>}
+          {tab === 'public' && <PublicAccessSettings/>}
           {tab === 'mcp' && <><h3 className="settings-section-title">插件连接</h3><p className="settings-description">连接外部 MCP 服务，扩展可用工具。</p>
             {s.servers.map(server => <div className="settings-server" key={server.id}><Puzzle size={17} /><div><strong>{server.name}</strong><small>{server.url}</small></div><button aria-label={`移除 ${server.name}`} disabled={!s.connected || busy} onClick={() => void request('/mcp/servers/' + encodeURIComponent(server.id), undefined, 'DELETE').then(() => s.set({ servers: useStudio.getState().servers.filter(item => item.id !== server.id) })).catch(e => setError(e.message))}><Trash2 size={15} /></button></div>)}
             <label className="settings-field">服务名称<input value={name} placeholder="我的 MCP 服务" onChange={event => setName(event.target.value)} /></label><label className="settings-field">服务地址<input value={url} placeholder="https://example.com/mcp" onChange={event => setUrl(event.target.value)} /></label>
@@ -93,7 +90,7 @@ export function SettingsDialog({initialTab='general'}:{initialTab?:Tab}) {
           {error && <p className="settings-error" role="alert">{error}</p>}
         </motion.div></AnimatePresence></div>
       </div>
-      <footer className="settings-dialog-footer"><span>{tab === 'general' ? '已自动保存' : saved ? '设置已保存' : '当前工作空间'}</span>{tab === 'general' || tab === 'mcp' ? <button className="settings-done" onClick={close}>完成</button> : <button className="settings-done" disabled={busy || !s.connected || (tab === 'model' && (!draft.model.trim() || !draft.baseUrl.trim()))} onClick={() => void save()}>{busy ? '正在保存…' : saved ? '已保存' : '保存设置'}</button>}</footer>
+      <footer className="settings-dialog-footer"><span>{tab === 'general' ? '已自动保存' : saved ? '设置已保存' : '当前工作空间'}</span>{tab !== 'permissions' ? <button className="settings-done" onClick={close}>完成</button> : <button className="settings-done" disabled={busy || !s.connected} onClick={() => void save()}>{busy ? '正在保存…' : saved ? '已保存' : '保存设置'}</button>}</footer>
     </motion.div>
   </motion.div>;
 }
