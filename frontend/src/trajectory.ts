@@ -36,4 +36,4 @@ export function projectTrajectory(records:TrajectoryRecord[],mode:'clock'|'durat
 }
 export function formatDuration(value:number|null){return value===null?'—':value<1000?`${Math.round(value)} ms`:`${(value/1000).toFixed(value<10000?2:1)} s`;}
 export function recordDuration(record:TrajectoryRecord){return record.at!==null&&record.end!==null&&record.end>=record.at?record.end-record.at:null;}
-export function stringifyRecord(value:unknown){return stringify(value);}
+export function stringifyRecord(value:unknown){const result=value as {content?:{type:string;text?:string}[]}|null;if(result&&Array.isArray(result.content)&&result.content.length&&result.content.every(block=>block.type==='text')){const blocks=result.content.map(block=>{try{return JSON.parse(block.text||'')}catch{return block.text||''}});return blocks.length===1?stringify(blocks[0]):stringify(blocks);}return stringify(value);}

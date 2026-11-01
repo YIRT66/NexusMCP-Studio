@@ -30,6 +30,7 @@ export function App() {
   useEffect(()=>{if(!s.connected)return;let active=true;void request<WebchatState>('/webchat/activate',{sessionId:ui.activeSessionId}).then(state=>{if(active)applyWebchatState(state);}).catch(error=>{if(active&&useStudio.getState().webchat.transport!=='extension')s.set({error:error.message});});return()=>{active=false;};},[ui.activeSessionId,s.connected,s.webchat.transport]);
   const [page, setPage] = useState<Page>('chat');
   const [sidebar, setSidebar] = useState(()=>!matchMedia('(max-width: 700px)').matches);
+  useEffect(()=>{const media=matchMedia('(max-width: 700px)');const update=()=>setSidebar(!media.matches);media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
   const [query, setQuery] = useState('');
   const [nonce, setNonce] = useState(0);
   const [settingsTab,setSettingsTab]=useState<'general'|'model'|'mcp'|'permissions'>('general');

@@ -8,6 +8,8 @@ import path from 'node:path';
 import os from 'node:os';
 import WebSocket,{WebSocketServer} from 'ws';
 import {PublicAccess} from './public-access.mjs';
+import {fork} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 test('公网门户：随机分享链接、受保护 HTTP/WS、来源检查及即时撤销',{timeout:20000},async t=>{
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-public-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));let forwarded;
  const upstream=createServer((req,res)=>{forwarded=req.headers;res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true,path:req.url}));});const sockets=new WebSocketServer({server:upstream});sockets.on('connection',(ws,req)=>{assert.equal(req.headers['x-nexus-shared-access'],'private-relay-secret');ws.on('message',value=>ws.send(value));});await new Promise(resolve=>upstream.listen(0,'127.0.0.1',resolve));t.after(()=>{for(const ws of sockets.clients)ws.terminate();sockets.close();upstream.closeAllConnections();upstream.close();});
@@ -23,4 +25,24 @@ test('公网门户：随机分享链接、受保护 HTTP/WS、来源检查及即
  const socket=new WebSocket(base.replace('http:','ws:')+'/ws',{headers:{host,cookie:session,origin:'https://share.example.com'}});await new Promise((resolve,reject)=>{socket.once('open',resolve);socket.once('error',reject);});const echoed=new Promise(resolve=>socket.once('message',value=>resolve(value.toString())));socket.send('screen.subscribe');assert.equal(await echoed,'screen.subscribe');
  const closed=new Promise(resolve=>socket.once('close',resolve));await portal.stop();await closed;assert.equal(portal.state.url,'');assert.ok(revoked.length);await assert.rejects(fetchPortal(base+'/api/health',{headers:{host,cookie:session}}));
  await portal.start();const next=`http://127.0.0.1:${portal.port}`;assert.notEqual(portal.state.url,state.url);assert.equal((await fetchPortal(next+'/api/health',{headers:{host,cookie:session}})).status,403);
+});
+test('真实运行时公网门户：远控操作记账、敏感设置隔离、撤销只关闭远程终端',{skip:process.platform!=='linux',timeout:30000},async t=>{
+ const root=fileURLToPath(new URL('../',import.meta.url)),directory=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-public-runtime-')),binary=path.join(directory,'cloudflared-fixture'),marker=path.join(directory,'gateway.json');
+ await fs.writeFile(binary,'#!/usr/bin/env node\n'+`require('fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({url:process.argv.at(-1)}));console.error('https://nexus-local-fixture.trycloudflare.com');console.error('Registered tunnel connection');setInterval(()=>{},1000);`,{mode:0o700});
+ const child=fork(path.join(root,'runtime/server.mjs'),[],{env:{...process.env,NEXUS_DATA_DIR:directory,NEXUS_PORT:'0',MCP_NO_TUNNEL:'1',CLOUDFLARED_PATH:binary},stdio:['ignore','pipe','pipe','ipc']});child.stdout.resume();child.stderr.resume();
+ t.after(async()=>{if(child.connected){child.send({type:'shutdown'});await new Promise(resolve=>{child.once('exit',resolve);setTimeout(()=>{child.kill();resolve();},7000).unref();});}await fs.rm(directory,{recursive:true,force:true});});
+ const ready=await new Promise((resolve,reject)=>{child.on('message',m=>{if(m.type==='runtime.ready')resolve(m);});child.once('error',reject);});
+ const local=async(route,body)=>{const response=await fetch(ready.url+'/api'+route,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});assert.ok(response.ok);return response.json();};
+ const until=async predicate=>{for(let i=0;i<200;i++){const value=await predicate();if(value)return value;await new Promise(resolve=>setTimeout(resolve,30));}throw new Error('公网运行时测试等待超时');};
+ await local('/service/start',{});await until(async()=>(await local('/bootstrap')).service.phase==='running');
+ const own=JSON.parse((await local('/tools/call',{name:'terminal_create',args:{}})).content[0].text);
+ await local('/public-access/start',{});const share=await until(async()=>{const state=await local('/public-access');return state.phase==='running'?state:false;});const gateway=JSON.parse(await fs.readFile(marker,'utf8')).url,host=new URL(share.url).host;
+ const joined=await fetchPortal(gateway+new URL(share.url).pathname,{headers:{host}}),cookie=joined.headers.get('set-cookie').split(';')[0];
+ const remote=async(route,body)=>{const response=await fetchPortal(gateway+'/api'+route,{method:body===undefined?'GET':'POST',headers:{host,cookie,origin:'https://'+host,...(body===undefined?{}:{'content-type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body)});assert.equal(response.status,200);return response.json();};
+ const boot=await remote('/bootstrap');assert.equal(boot.remote,true);assert.equal(boot.publicAccess,undefined);assert.equal(boot.dsh.url,'');
+ const ws=new WebSocket(gateway.replace('http:','ws:')+'/ws',{headers:{host,cookie,origin:'https://'+host}});const events=[];ws.on('message',raw=>events.push(JSON.parse(raw.toString())));await new Promise((resolve,reject)=>{ws.once('open',resolve);ws.once('error',reject);});
+ const other=JSON.parse((await remote('/tools/call',{name:'terminal_create',args:{}})).content[0].text);assert.ok(other.id);await until(async()=>(await local('/bootstrap')).calls.some(call=>call.source==='公网远控'&&call.name==='terminal_create'));
+ assert.equal(events.some(event=>event.type==='public-access.state'||event.type==='dsh.state'),false);
+ const closed=new Promise(resolve=>ws.once('close',resolve));await local('/public-access/stop',{});await closed;
+ await until(async()=>{const terminals=JSON.parse((await local('/tools/call',{name:'computer_info',args:{}})).content[0].text).terminals;assert.ok(terminals.some(s=>s.id===own.id));return !terminals.some(s=>s.id===other.id);});
 });
