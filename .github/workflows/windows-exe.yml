@@ -40,7 +40,16 @@ jobs:
           Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile 'preserved-mcp/bin/cloudflared.exe'
           if ((Get-Item 'preserved-mcp/bin/cloudflared.exe').Length -lt 1000000) { throw 'cloudflared download failed or incomplete' }
       - name: Build desktop installer
-        run: npm run dist -- --publish never
+        shell: pwsh
+        run: |
+          npm run typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build:service
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx --no-install electron-builder --win nsis --x64 --publish=never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Save Windows installer
         uses: actions/upload-artifact@v4
         with:
