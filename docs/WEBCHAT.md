@@ -1,59 +1,56 @@
-# 网页聊天与客户端会话
+# NexusMCP Studio 0.2.0 网页聊天
 
-聊天栏通过已登录 AI 网站的网页发送消息并读取回复，不调用模型 API，不需要 API Key。登录、验证码和账号权限在网站正常完成。原 MCP 与 cloudflared 临时公网服务继续使用，不受网页聊天传输方式影响。
+模型菜单分为「MCP 模型」和「API 模型」。本文说明使用已登录 AI 网页的 MCP 模型；API 模型在设置中填写 OpenAI 兼容地址、模型 ID 与密钥，使用方式见 [功能说明](WORKSPACE-FEATURES.md)。
 
-## 推荐：Edge / Chrome 插件
+## 连接 Edge / Chrome 扩展
 
-如果内置浏览器出现 `Route Error / Invalid content type: text/html`，说明网站预期的数据被替换成 HTML 错误页。原因可能是登录、网络、站点防护或内嵌浏览器兼容性；不能仅凭此报错确定。建议使用正常浏览器登录加扩展桥接，不伪装浏览器身份或绕过验证。
+1. 在会话右上打开「AI 浏览器」，选择「Edge / Chrome 扩展」。
+2. 在 `edge://extensions/` 或 `chrome://extensions/` 开启开发者模式，加载 `browser-plugin/` 或解压后的扩展包。桌面软件可打开扩展文件夹。
+3. 从客户端复制完整本机扩展连接地址，粘贴到扩展弹窗并连接。它与提供给 AI 客户端的公网 MCP 地址不同。
+4. 在软件中为当前会话打开 AI 网页，完成网站登录后，返回软件发送消息。
 
-1. 在客户端会话右上打开「AI 浏览器」，运行方式选「Edge / Chrome 插件」。
-2. 点击「打开扩展文件夹」。在 `edge://extensions/` 或 `chrome://extensions/` 打开开发者模式，加载该文件夹。打包前源码路径为 `browser-plugin/`。
-3. 在客户端点击「复制客户端连接地址」，粘贴进浏览器扩展弹窗，点击「连接客户端」。这个地址只连本机，与复制给 GPT 的公网 MCP 地址不同。
-4. 在客户端点击「打开对应网页」，用网站正常方式登录。之后可收起客户端浏览器面板，在软件聊天栏连续发消息。
+本机配对地址形如 `ws://127.0.0.1:<port>/webchat/extension/<配对值>`，不应公开分享。端口发生变化时重新复制地址。网页绑定失效可在扩展弹窗点击「绑定当前 AI 标签页」。
 
-本机配对地址和端口会保留，浏览器扩展自动尝试重连。如果原端口被其他进程占用，客户端会换一个空闲端口，此时重新复制连接地址。扩展文件夹里是标准 Manifest V3 扩展；无需修改浏览器指纹。
+## 会话与完成检测
 
-## 会话规则
-
-- 一个客户端会话对应每个 AI 网站的一个固定网页标签和对话地址。
-- 同一客户端会话连续发送时，复用已绑定的标签，不打开新标签，也不跳转到新对话首页。
-- 只有客户端新建会话，才为它分配新的网页标签；原会话保留。
-- 切回旧会话，恢复原标签；已关闭或重启时用保存的网页对话地址恢复。
-- 网站把首条消息从首页跳转到具体对话 URL 时，会自动更新绑定地址。
-- 支持识别的网页对话消息会同步到客户端，包括用户在网页里直接发出的消息；回复持续更新，避免重复追加多条。
-- 生成期间阻止重复发送和切换会话，支持停止生成。发送失败不会自动重复提交。
-
-不要手动把已经绑定的网页标签改成另一个独立对话。手动导航会被视为当前客户端会话选择的新网页对话，并更新映射。
+- 同一客户端会话复用各网站已绑定的网页标签；新会话分配新标签，切回旧会话恢复原地址。
+- 网站跳转到具体对话地址后会更新绑定；关闭标签、扩展重启或接收器失效时尝试恢复。
+- 识别输入框时也检查 iframe。无法确认发送结果时，不自动重复发送。
+- 客户端消息带有 `requestId/sessionId`，优先接收 AI 通过 `client_reply` 回传的回答，可分段更新。
+- 没有 MCP 回传时，确认本轮助手正文稳定、网页停止生成后，同步最终回复；旧回复不能完成新请求。
+- MCP 已回传但网页仍在生成时，先等待或点击停止，再发送下一条消息。
+- 本版不把网页里任意手动发起的对话全部导入软件，回复路由以客户端当前请求为准。
 
 ## 内置浏览器
 
-仍可选择「内置浏览器」。它使用 Electron WebContentsView，网页与本机 UI 隔离，登录会话存在本机独立 Chromium 用户目录。网页面板收起后继续工作。客户端新建会话、旧会话恢复及对话地址绑定使用同样规则。
+Electron WebContentsView 与应用界面隔离，登录状态保存在本机独立会话目录。收起面板后，当前网页任务继续运行。内置浏览器和扩展共用适配器、会话绑定与完成判断。
 
-由于网站对浏览器环境和登录方式可能有限制，不能保证所有网站都接受内嵌 Chromium。出现登录不支持、验证码或 HTML 错误页时，可切换普通浏览器插件。
+网站可能限制嵌入式 Chromium。遇到登录限制、验证码或 HTML 错误页时，可改用普通浏览器扩展，并在网站正常完成验证。
 
-## 适配范围和限制
+## 控制台与注入
 
-包含 ChatGPT、Claude、DeepSeek、Gemini、Qwen、Kimi、豆包的网页 DOM 适配器。网站改版可能使输入框、发送/停止按钮、用户消息或回复的选择器失效，失败会提示，不报告假成功。测试覆盖桥接流程和模拟各站 DOM 的页面，尚未替用户登录和逐一验证所有网站的现行账户页面。
+AI 浏览器面板可读取控制台、执行 JS 和注入 JS / CSS。普通浏览器需先在扩展弹窗点击「开启网页调试」，只附加当前绑定网页。扩展在安装时声明 debugger 权限；浏览器会显示调试提示，可通过提示条或弹窗关闭。
 
-当前发送文本和网页可读取的回复。附件需在网站完成上传后发送。网站中的模型选择、插件/MCP 应用选择、账号切换和验证仍在网页完成；客户端网站下拉菜单不等同于网站自己的模型菜单。网站回复没有向客户端开放的隐藏推理不会读取。
+MCP 提供 `browser_console_read`、`browser_console_control` 和 `browser_inject`，使用 `target=chat` 指向当前 AI 网页；`target=managed` 指向独立托管的浏览器。读取控制台从首次调用开始保留最近 500 条，详细操作见 [功能说明](WORKSPACE-FEATURES.md)。
 
-需要 GPT 控制电脑时，先在客户端启动 MCP，按原流程把完整临时公网 MCP 地址添加到 GPT 账户并在该网页对话中启用应用。聊天桥接本身不会自动为 GPT 账户安装 MCP 应用。
+## 适配范围
 
-## 接口与源码
+包含 ChatGPT、Claude、DeepSeek、Gemini、Qwen、Kimi、豆包的 DOM 适配器。网站更新可能需要调整选择器；隔离测试页面不等同于逐一验证真实账户页面。
 
-- `GET /api/webchat`：当前网站、会话、状态、传输方式。
-- `POST /api/webchat/transport`：`{transport:'embedded'|'extension'}`。
-- `POST /api/webchat/activate`：`{sessionId}`，选择当前客户端会话。
-- `POST /api/webchat/open`：`{provider,sessionId}`，复用或首次创建会话绑定的网页。
-- `POST /api/webchat/send`：`{text,sessionId,planning?,goal?,attachments?}`。
-- `POST /api/webchat/stop`：停止网页回复。
-- `GET /api/webchat/bridge`：本机扩展配对地址，不向公网映射。
-- WS：`webchat.state`、`webchat.history`、`message.upsert`、`agent.status`。
-- `desktop/webchat.cjs`：内置浏览器与会话绑定。
-- `browser-plugin/adapter.js`：内置浏览器和外部扩展共用的 DOM 适配逻辑。
-- `browser-plugin/background.js`：正常浏览器标签管理、会话持久化与本机桥接。
-- `runtime/webchat-relay.mjs`：本机扩展配对与消息转发。
+网页附件需在网站上传；网站内的具体模型、MCP 应用、账号和验证码也在网页完成。需要网页 AI 控制电脑时，在该会话中启用软件提供的 MCP 应用。桥接不会自动替用户修改网站账户配置，也不会读取网站未提供的隐藏推理。
 
-验证命令：`node scripts/test-webchat.cjs`、`node --test runtime/browser-extension.test.mjs runtime/webchat-relay.test.mjs`。前者使用隔离登录目录与本地测试网页，不访问用户已有登录账号。
+## 接口
 
-真实 Edge 扩展链路验证：`node scripts/test-browser-extension.cjs`。测试在隔离浏览器目录加载 MV3 扩展，将测试域名页面替换为本地 fixture，不向真实 AI 网站发送消息。2026-11-01 已通过本机配对、连续发送、回复同步和复用标签验证。扩展成品包为 `release/NexusMCP-Browser-Extension.zip`。
+| 接口 | 用途 |
+| --- | --- |
+| GET `/api/webchat` | 当前网页、会话、生成与就绪状态 |
+| POST `/api/webchat/transport` | `{transport:'embedded'\|'extension'}` |
+| POST `/api/webchat/activate` | `{sessionId}` |
+| POST `/api/webchat/open` | `{provider,sessionId,url?}`，打开或复用网页 |
+| POST `/api/webchat/send` | `{text,sessionId,planning?,goal?}` |
+| POST `/api/webchat/stop` | 停止当前网页生成和等待 |
+| GET `/api/webchat/bridge` | 获取本机扩展配对地址 |
+
+事件包括 `webchat.state`、`message.upsert`、`client.failed` 和 `agent.status`。源码入口为 `desktop/webchat.cjs`、`browser-plugin/`、`runtime/webchat-relay.mjs` 和 `runtime/client-replies.mjs`。
+
+验证命令与范围见 [网页聊天验证说明](WEBCHAT-QA.md)。

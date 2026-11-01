@@ -1,4 +1,4 @@
-# 会话、调试与公网远控
+# NexusMCP Studio 0.2.0 会话、调试与公网远控
 
 ## 模型与时间轴
 
@@ -24,7 +24,7 @@ Cordis bundle、原生服务及 UI 扩展由官方运行时在独立工作台执
 
 `browser_console_read` 开始采集页面控制台和异常，保留最近 500 条，支持游标。`browser_console_control` 支持 JS 执行、清空、暂停、恢复和终止脚本；`browser_inject` 支持 JS/CSS、后续导航继续注入及移除。移除可删除 CSS 和停止后续注入，已执行 JS 需自行清理副作用。
 
-`target=managed` 为 `hancode_browser_open` 管理的浏览器；`target=chat` 为当前绑定的 AI 网页。内置 Electron 浏览器直接使用 CDP；普通 Chrome/Edge 需在扩展弹窗点击「开启网页调试」，启用当前网页调试（扩展安装时声明 debugger 权限），仅附加当前绑定的网页。浏览器会显示调试提示，关闭提示条会断开。AI 浏览器面板也提供控制台。控制台的敏感命名对象属性预览会隐藏，但脚本本身仍以该页面权限运行。
+`target=managed` 为软件独立托管的浏览器；`target=chat` 为当前绑定的 AI 网页。内置 Electron 浏览器直接使用 CDP；普通 Chrome/Edge 需在扩展弹窗点击「开启网页调试」，启用当前网页调试（扩展安装时声明 debugger 权限），仅附加当前绑定的网页。浏览器会显示调试提示，关闭提示条会断开。AI 浏览器面板也提供控制台。控制台的敏感命名对象属性预览会隐藏，但脚本本身仍以该页面权限运行。
 
 ## 公网远控
 

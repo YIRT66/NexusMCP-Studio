@@ -1,174 +1,84 @@
-# 客户端服务接入（已实现）
+# NexusMCP Studio 0.2.0 客户端服务接口
 
-本任务只维护 `runtime/`、`preserved-mcp/` 及服务打包脚本。界面和 Electron 窗口由 UI 任务维护。
+`runtime/server.mjs` 为桌面和网页版提供同源 HTTP / WebSocket 接口，管理电脑控制内核、模型请求、扩展、浏览器桥接及公网入口。
 
-主流程是 **启动本机 MCP → 自动启动 cloudflared Quick Tunnel → 复制完整地址 → GPT 网页版连接 → 实时显示工具操作**。本机不调用大模型 API，不需要 API Key、Codex CLI 或 Claude CLI。`hancode_*` 工具名为兼容保留，浏览器已经改为独立管理的 Edge / Chrome，不需要原 HanCode。
+## 启动与打包
 
-插件、技能、Git/npm/PyPI 安装及外接 MCP 已实现，直接兼容 UI 的 `/extensions` 适配层，详见 [EXTENSIONS-API.md](./EXTENSIONS-API.md)。打包时 `runtime/server.mjs`、`runtime/extensions.mjs`、`runtime/extension-install.mjs` 必须同时包含；推荐直接复制服务打包目录。
+源码运行 `npm run service:start`，默认监听 `http://127.0.0.1:8765`；`NEXUS_PORT=0` 自动分配端口。仅启动运行时不会立即启动 MCP，前端首次连接后调用 `ensureMcpStarted()`，也可调用 `POST /api/service/start`。
 
-## Electron 启动内置运行时
+Electron 以独立 Node 子进程启动运行时，并通过 IPC 接收 `{type:'runtime.ready',url,port}`。该消息只说明控制接口就绪，MCP 状态仍以 `service.phase` 为准。退出时发送 `{type:'shutdown'}`；IPC 断开也会触发清理。
 
-Windows 便携包目录结构保持如下。服务不应放在 asar 内运行；请作为 `extraResources` 整体复制，或复制服务打包脚本生成的目录。
+打包目录为 `resources/service/`，包含 `runtime/`、`preserved-mcp/`、`browser-plugin/`、`frontend/dist/` 和依赖。主进程使用平台对应的 `preserved-mcp/runtime/node.exe` 或 `node`，不在 asar 内启动服务。构建入口为 `scripts/package-service.mjs`。
 
-```text
-resources/service/
-  runtime/server.mjs
-  preserved-mcp/
-    runtime/node.exe
-    bin/cloudflared.exe
-    node_modules/
-    server.mjs
-    tools.mjs
-    browser.mjs
-    page-control.mjs
-    desktop.ps1
-    system-worker.ps1
-    其余服务源码和许可证
-```
-
-主进程使用 `spawn` 创建带 IPC 的进程。使用随包 Node，避免 Electron 的 `ELECTRON_RUN_AS_NODE` 或原生模块 ABI 差异。
-
-```js
-const {spawn} = require('node:child_process');
-const path = require('node:path');
-const base = app.isPackaged ? path.join(process.resourcesPath, 'service') : path.resolve(__dirname, '..');
-const runtime = spawn(path.join(base, 'preserved-mcp/runtime/node.exe'),
-  [path.join(base, 'runtime/server.mjs')], {
-    cwd: base,
-    windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-    env: {...process.env,
-      NEXUS_PORT: '0',
-      NEXUS_DATA_DIR: path.join(app.getPath('userData'), 'service'),
-      NEXUS_DESKTOP_ORIGIN: 'nexus://studio',
-    },
-  });
-runtime.on('message', message => {
-  if (message.type === 'runtime.ready') {
-    // message.port 和 message.url 是实际本机控制端口。
-    // 把 /api/* 同源转发到 message.url；通过 preload 向前端提供 WebSocket URL。
-    console.log('服务控制接口就绪', message.port);
-  }
-});
-```
-
-`runtime.ready` 仅表示本地控制接口就绪，**不代表公网 MCP 已启动**。用户点击启动按钮后才调用 `POST /api/service/start`。关闭客户端时发送 `runtime.send({type:'shutdown'})` 并等待退出；父进程 IPC 断开也会清理服务。不要只杀 Electron 窗口而遗留服务进程。
-
-不指定端口时默认 `127.0.0.1:8765`；指定 `NEXUS_PORT=0` 自动分配空闲端口。`NEXUS_DEV_ORIGIN` 可指定一个 Vite 来源，例如 `http://127.0.0.1:5173`。服务校验 Host / Origin，不使用通配 CORS。打包版的同源 HTTP 代理应使用实际端口；WebSocket 使用 `ws://127.0.0.1:<port>/ws`，并在 CSP 中允许该地址。普通网页端也可同源访问控制接口。
+主进程设置 `NEXUS_DATA_DIR` 保存数据，使用 `NEXUS_DESKTOP_ORIGIN` 声明桌面来源。开发代理可通过 `NEXUS_DEV_ORIGIN` 声明 Vite 来源。运行时校验 Host / Origin，不使用通配 CORS。
 
 ## HTTP 接口
 
-所有请求和响应为 JSON；异常返回非 2xx 和 `{error:string}`。本机控制接口不映射公网，cloudflared 只映射子进程的随机 MCP 路径。
+除文件上传外，请求使用 JSON。错误返回非 2xx 和 `{error:string}`。工具调用返回 MCP `CallToolResult`，还需检查其 `isError`。
 
-| 方法 / 路径 | 说明 |
+| 方法 / 路径 | 用途 |
 | --- | --- |
-| GET `/api/bootstrap` | 初始状态：`{mode,settings,service,tools,calls,logs,approvals,history,terminalId,phase,servers}` |
-| POST `/api/service/start` | `{}`；立即返回 `starting`，通过 WS 等待 `running` 或 `error`，隧道最长等待约 90 秒 |
-| POST `/api/service/stop` | `{}`；停止 MCP、隧道、系统工作者、托管浏览器和持久终端，返回最终状态 |
-| POST 或 PUT `/api/settings` | 保存下述设置中的任意字段，成功返回完整设置 |
-| GET `/api/prompt/default` | `{prompt}`，用于恢复内置默认提示词 |
-| PUT `/api/tools/:name` | `{enabled:boolean}`；开启或禁用实际工具 |
-| POST `/api/tools/call` | `{name,args}`；本机用户直接调用工具，返回原始 MCP `CallToolResult`；不要将此接口映射公网 |
-| POST `/api/approvals/:id` | `{allowed:boolean}`；不存在或过期返回 404 |
-| GET `/api/fs/list?path=...` | `{path,entries:[{name,path,directory,size?}]}`；空路径为当前用户主目录；最多 2000 条 |
-| GET `/api/system/processes` | `[{pid,name,cpu,memory}]`；`cpu` 是累计 CPU 秒数，**不是使用率**，`memory` 为字节；需要 MCP 正在运行 |
+| GET `/api/health` | 运行时健康状态 |
+| GET `/api/bootstrap` | 平台、设置、MCP、工具、活动、审批、模型、聊天、扩展、DSH 与公网状态 |
+| POST `/api/service/start` | 启动 MCP，返回当前状态；通过事件等待 `running` 或 `error` |
+| POST `/api/service/stop` | 停止 MCP、API 请求及其管理的终端和浏览器 |
+| POST / PUT `/api/settings` | 更新主题、字号、工具禁用列表、审批方式及默认提示词等设置 |
+| PUT `/api/tools/:name` | `{enabled:boolean}`，启停指定工具 |
+| POST `/api/tools/call` | `{name,args}`，执行工具并返回 MCP 结果 |
+| POST `/api/approvals/:id` | `{allowed:boolean}`，处理待审批操作 |
+| GET `/api/fs/list?path=...` | 文件列表；空路径使用当前用户主目录 |
+| GET `/api/system/processes` | 进程列表；CPU 为累计秒数，内存为字节 |
+| POST `/api/permissions` | `{mode:'readonly'\|'workspace'\|'full',workspace?,sessionId?}`；返回确认的模式 |
+| GET `/api/model-profiles` | API 模型列表，只返回密钥是否配置 |
+| POST `/api/model-profiles` | 新建或更新 `{id?,name,provider?,baseUrl,model,apiKey?}` |
+| DELETE `/api/model-profiles/:id` | 删除模型配置，使用中需先停止任务 |
+| POST `/api/chat/send` | `{sessionId,profileId,text,permission?,planning?,goal?,attachments?}`，启动 API 请求并返回 202 |
+| POST `/api/chat/stop` | `{sessionId}`，停止指定 API 请求及其待审批操作 |
+| GET / POST `/api/webchat/...` | 网页聊天，见 [网页聊天接口](WEBCHAT.md) |
+| GET / POST `/api/extensions/...` | 扩展与文件上传，见 [插件接口](EXTENSIONS-API.md) |
+| GET `/api/public-access` | 本机公网入口状态 |
+| POST `/api/public-access/start` | 开始建立 HTTPS 隧道，返回 202；状态通过事件更新 |
+| POST `/api/public-access/stop` | 撤销链接、断开远程连接，停止该入口的 API 请求和终端 |
+| GET `/api/dsh` | 官方 DSH 兼容引擎状态 |
+| POST `/api/dsh/install` | 按需安装固定版本引擎，返回 202 |
+| POST `/api/dsh/start` / `/stop` | 启停本机 DSH 原生工作台 |
+| GET / POST `/api/dsh/plugins` | 查询原生插件，或提交 `{action:'add'\|'remove',spec}` |
+| POST `/api/feedback` | `{sessionId,text}`，保存会话反馈 |
 
-`phase:'idle'`、`servers:[]` 是旧前端兼容字段；不要将它们当作本机模型引擎。本版本没有 `agent.run` 或模型聊天接口，任务由 GPT 网页版发起。
+`bootstrap.remote` 表示连接是否来自公网门户；远程连接不返回分享链接或 DSH 工作台凭证，也不能管理这两项设置。
 
-### service
+## 模型与回复
 
-```ts
-type ServiceState = {
-  phase:'stopped'|'starting'|'running'|'stopping'|'error';
-  url:string;        // 复制给 GPT 的完整 HTTPS 地址，包含随机 /mcp/<48位十六进制>
-  localUrl:string;   // 本机 MCP 调试地址；不能给 GPT 网页版使用
-  error:string;
-  lastClient:string;// 最近执行 initialize 的客户端名称，不能宣称它一直在线
-  clientAt:number;
-  startedAt:number;
-  localOnly:boolean;// 仅 MCP_NO_TUNNEL=1 测试时为 true
-};
-```
+网页模型通过 `/api/webchat/send` 发送带 `requestId/sessionId` 的任务。优先使用 `client_reply` 回传；网页回复结束且稳定后可自动同步最终正文。API 模型通过 `/api/chat/send` 使用 OpenAI 兼容接口，支持流式文本和最多 12 轮工具调用。
 
-停止或失败时清空地址。只有 `phase==='running' && !localOnly` 时才显示公网连接已就绪。不要缓存上一轮地址。连接不要求登录、OAuth 或 API Key，在 ChatGPT 中选择「无身份验证」。完全权限是工具执行策略，与身份验证是两回事。
+两种方式都使用 `message.upsert` 更新同一条助手消息。消息记录来源、会话、请求、开始时间、首段时间、完成时间和状态；未知时间不补造。API 密钥只保存在运行时数据目录，模型列表与实时事件不返回密钥。
 
-### settings
+## 状态与权限
 
-```ts
-type Settings = {
-  theme:'dark'|'light'|'system';
-  fontSize:12|13|14|15|16|18;
-  detail:'standard'|'expanded';
-  autoCollapse:boolean;
-  frameRate:number;  // 0.2 到 2，默认 1，仅有桌面订阅时采集
-  mode:'safe'|'overdrive';
-  disabled:string[];// 禁用的实际工具名称
-  prompt:string;    // 最大 30000 字符，MCP 初始化时传给客户端
-};
-```
+`service.phase` 为 `stopped / starting / running / stopping / error`。`service.url` 为完整 MCP 连接地址，包含随机路径；停止后清空。`localOnly` 表示测试用本机模式，不能当作公网连接地址。`lastClient/clientAt` 仅代表最近一次客户端初始化。
 
-Safe 模式：远程读取直接执行，其余操作等待本机审批，90 秒超时拒绝。Overdrive 模式：启用的工具自动执行。来自本机 UI 的直接点击/终端输入已有用户动作授权，不重复弹审批。所有工具权限以当前 Windows 用户为限，不会自动提权。提示词修改后需 GPT 重新初始化连接。
+`safe` 模式下，模型发起的修改操作需要审批；`overdrive` 允许启用的工具直接执行。本机界面及获授权的公网界面直接操作视为用户动作。`readonly` API 任务不向模型提供修改工具。工作区模式不是操作系统沙箱，执行仍受当前用户、系统权限和工具禁用设置限制。
+
+MCP 连接地址和公网控制台分享链接是不同入口。分享链接通过 HTTPS 换取 HttpOnly / Secure / SameSite Cookie，HTTP 与 WebSocket 都校验身份和来源；禁止把未保护的本机控制接口直接对外发布。完整行为见 [公网远控说明](WORKSPACE-FEATURES.md)。
 
 ## WebSocket
 
-后端事件为 `{type,data}`；前端发送 `{type,data,id?}`，`id` 目前不作为 RPC 响应关联。前端重连后重新获取 bootstrap，以恢复状态和最近记录。
+服务端事件为 `{type,data}`，客户端发送 `{type,data,id?}`。重连后重新读取 bootstrap。
 
-### 客户端发送
-
-| type | data |
+| 客户端消息 | data |
 | --- | --- |
-| `screen.subscribe` | `{enabled:boolean}`，进入桌面视图 true，离开 false；默认不截图 |
-| `terminal.create` | `{shell:'pwsh'|'cmd'|'bash'|'wsl',cols?,rows?}`；默认优先 PowerShell 7，缺失则回退 Windows PowerShell |
-| `terminal.input` | `{id,text}`；命令加 `\r` 执行，Ctrl+C 为 `\u0003` |
-| `terminal.resize` | `{id,cols,rows}` |
-| `terminal.close` | `{id}` |
-| `gui.mouse` | `{action:'click'|'move'|'double_click'|'right_click',x,y}`，使用原始虚拟桌面坐标 |
-| `mode.change` | `{mode:'safe'|'overdrive'}`，等待服务确认事件再更新 |
-| `agent.stop` | `{}`；兼容旧前端的紧急停止，效果是停止整个 MCP 服务和隧道 |
+| `screen.subscribe` | `{enabled:boolean}`；仅订阅时采集桌面 |
+| `terminal.create` | `{shell?,cols?,rows?}`；可用 Shell 由 bootstrap 返回 |
+| `terminal.input` | `{id,text}`；命令以 `\r` 执行，Ctrl+C 使用 `\u0003` |
+| `terminal.resize` / `terminal.close` | `{id,cols,rows}` / `{id}` |
+| `gui.mouse` | `{action,x,y,...}`，坐标使用原始虚拟桌面坐标 |
+| `mode.change` | `{mode:'safe'\|'overdrive'}` |
+| `agent.run` | 网页聊天发送入口；API 模型使用 `/api/chat/send` |
+| `webchat.stop` | 停止网页生成和等待 |
+| `agent.stop` | 停止当前网页任务；无网页任务时停止 MCP |
 
-### 服务发送
+主要事件包括 `service.state`、`service.log`、`tools.changed`、`tool.started`、`tool.finished`、`approval.requested`、`approval.resolved`、`terminal.output`、`screen.frame`、`webchat.state`、`message.upsert`、`models.changed`、`chat.state`、`public-access.state`、`dsh.state`、`extensions.changed`。
 
-| type | data |
-| --- | --- |
-| `service.state` | 完整 ServiceState |
-| `service.log` | `{id,at,text}`，cloudflared 与服务 stdout/stderr；内存保留最近 300 条 |
-| `tools.changed` | `[{name,description,readOnly,group,enabled,calls,running}]`，真实注册清单，启动前可能为空 |
-| `settings.changed` | 完整设置 |
-| `mode.changed` | `{mode}` |
-| `history.changed` | `[{id,startedAt,label}]`，每次成功启动一条工作会话，最多 30 条 |
-| `tool.started` / `tool.finished` | 下述 ToolCall；按 id 合并，不要把完成当成新调用 |
-| `approval.requested` | `{id,title,description,expiresAt}`，毫秒时间戳 |
-| `approval.resolved` | `{id}` |
-| `approvals.clear` | `{}`，服务停止时清除等待审批 |
-| `terminal.created` | `{id}`，远程 GPT 创建终端也会自动绑定到 UI 终端 |
-| `terminal.output` | `{id,text}`，原始 ANSI PTY 输出，直接写入 xterm |
-| `terminal.closed` | `{}` |
-| `screen.frame` | `{data,width,height,x,y,timestamp}`，data 为 **PNG data URL**，x/y 可为负数，宽高为原始桌面范围 |
-| `screen.clear` | `{}` |
-| `cursor` | `{x,y,clickId?}`，完成鼠标操作时发送 |
-| `telemetry` | `{cpu,memory}`，两者均为真实系统百分比，每 2 秒发送 |
-| `error` | `{message}`，本机 WS 操作失败 |
+## 验证
 
-```ts
-type ToolCall = {
-  id:string;source:'GPT / MCP'|'本机操作';name:string;
-  input:unknown;output?:unknown;
-  status:'running'|'completed'|'error';startedAt:number;endedAt?:number;
-};
-```
-
-活动日志记录工具参数与结果，不读取 GPT 对话或隐藏推理。参数预览最多 10000 字符，结果最多 16000 字符，截断后可能是字符串而非 JSON。截图结果用标记代替。敏感键（password/authorization/token/secret 等）会隐藏，但终端文本和文件正文不保证自动识别所有秘密。`calls` 恢复最近 200 条，本机日志在 `NEXUS_DATA_DIR/activity.jsonl`。预览截图、后台终端增量拉取不产生工具轨迹，避免刷屏。
-
-## 独立服务包与验证
-
-```powershell
-node scripts/package-service.mjs
-node --test runtime/service.test.mjs
-node runtime/public-smoke.mjs
-```
-
-服务包输出到 `release/NexusMCP-Service/`，包含随包运行时和依赖。独立运行 `START-SERVICE.bat` 仅启动本地控制接口；直接运行 `preserved-mcp/START-MCP.bat` 会立即启动 MCP 与临时隧道并打印完整地址。客户端打包可复制这个服务目录到 `resources/service`。
-
-2026-11-01 验证：官方 MCP SDK 经真实 Quick Tunnel HTTPS 地址完成 initialize、listTools 和 computer_info 调用。没有替用户在 ChatGPT 账户中创建应用；那一步需要用户在自己的网页账户中添加完整临时地址。
-
-官方说明：[OpenAI 自定义 MCP](https://developers.openai.com/api/docs/guides/custom-mcp-server)、[Cloudflare Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)。Quick Tunnel 不支持 SSE，本服务使用 Streamable HTTP 的 JSON 响应模式。
+运行 `npm test`、`npm run test:mcp`，构建服务包后运行 `node runtime/package-smoke.mjs`。公网门户测试使用本地隧道替身验证转发、鉴权及撤销；第三方网页和模型接口使用隔离 fixture 验证协议，不等同于真实账号的端到端验收。

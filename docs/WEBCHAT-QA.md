@@ -1,21 +1,31 @@
-# 网页聊天验证清单
+# NexusMCP Studio 0.2.0 网页与模型验证
 
-- 独立 Electron 启动：自动启动动态端口的本机运行时，聊天栏在线；不要求手动启动服务。
-- AI 浏览器打开与关闭、登录界面、浏览器面板正确位置和缩放；设置和其他页面覆盖时隐藏原生视图。
-- 在软件聊天框输入中文、多行消息，按 Enter 或发送按钮；网页只收到一次；回复逐段更新，完成后恢复可发送状态。
-- 收起浏览器后继续发送，不切换网页；再次打开保留页面和会话。
-- ChatGPT、Claude、DeepSeek、Gemini、Qwen、Kimi、豆包的 DOM 结构分别用本地测试页面验证。
-- 未登录无输入框：返回错误并保留消息，不发送；禁用按钮：不发送并提示；上条生成中：阻止重复发送。
-- 停止生成：点击网页停止按钮，客户端解锁；附件未上传时明确拒绝，避免漏发附件。
-- 切换网站只在空闲时允许；会话上下文用独立网页标签，避免本地会话串到同一网页会话。
-- 登录 Cookie 由本机 Chromium 持久 session 保存，插件不读取密码或 Cookie；重启后仍保留网站自己的登录状态。
-- 生产打包：浏览器代码和服务依赖打入 EXE；测试包内启动和消息回传。
+## 自动验证
 
-2026-11-01 本次验证结果：
+| 命令 | 覆盖范围 |
+| --- | --- |
+| `node scripts/test-embedded-webchat.mjs` | 真实 Electron 内置网页：MCP 提前回传时的发送保护与停止、控制台、JS / CSS、iframe 与最终回复同步 |
+| `node scripts/test-browser-extension.mjs` | 真实 Manifest V3 扩展：配对、发送、会话标签、iframe、DOM 完成回退、控制台和注入 |
+| `node scripts/test-webchat.cjs` | 内置网页测试的兼容命令入口 |
+| `node scripts/test-extension-popup.mjs` | 扩展深浅主题、连接校验、发送、停止、复制与失败草稿 |
+| `node scripts/test-workbench-ui.mjs` | 实际 API 工具循环、模型选择、时间轴交互、手机布局、公网设置与文件上传 |
+| `node --test runtime/reply-completion.test.mjs runtime/browser-extension.test.mjs runtime/webchat-relay.test.mjs` | 本轮归属、稳定完成、回复防重、标签隔离与断线错误 |
+| `node --test runtime/api-models.test.mjs runtime/api-integration.test.mjs` | 流式 API、工具调用、审批、取消和密钥不回传 |
 
-- `scripts/test-webchat.cjs` 通过：同一会话连续发送复用网页，网页用户消息反向同步，收起面板发送，七类 DOM 编辑器适配，登录保留，网页地址与本机配对端口持久化。
-- `scripts/test-browser-extension.cjs` 通过：真实 Edge 加载 Manifest V3 扩展、弹窗本机配对、客户端连续发送两条消息、网页回复回传、收起面板继续发送，始终复用同一网页标签。通过网络拦截向测试网页提供本地 fixture，不访问真实 AI 模型或用户账号。
-- `runtime/browser-extension.test.mjs` 通过：新客户端会话分配新标签、切回旧会话复用标签；`runtime/webchat-relay.test.mjs` 通过：配对校验、会话 ID 转发及断线错误。
-- 前端 TypeScript 与 Vite 构建通过。当前仍以开发客户端为主；按照现有项目约定，最终 EXE 留到 UI 定稿打包。扩展 ZIP 和服务 ZIP 已更新。
+浏览器测试需要安装 Chromium，Electron 测试需要图形桌面；Linux 可在 Xvfb 与窗口管理器下运行。测试使用隔离配置目录、本地模型接口和网页 fixture，不访问用户已有账户。
 
-测试页面仅证明桥接和各类 DOM 编辑器工作，不代表已经登录或验证每个第三方网站的现行页面。网站改版、验证码、账号权限和嵌入式登录限制需真实网站人工验证。
+## 人工检查
+
+- 在真实网站正常登录，检查输入框、发送和停止按钮，以及当前会话的回复。
+- 同一客户端会话连续发送、收起浏览器后继续、切回旧会话，确认绑定和内容归属正确。
+- 检查未登录、禁用发送、网页关闭、网络中断及站点改版时的提示。
+- 分别检查 MCP 回传、网页最终回复回退，以及回传早于网页生成结束的情况。
+- 检查内置视图的位置、缩放，以及设置或其他页面打开时原生视图的隐藏。
+- 检查控制台启停、浏览器调试提示、脚本副作用和注入移除范围。
+- 在目标 Windows / Linux 安装包上核对启动、退出、桌面能力及实际网站登录兼容性。
+
+## 结果边界
+
+自动测试证明相应本地链路和协议行为，不代表已经逐一登录并验收所有第三方网站的当前版本。真实账号权限、验证码、网站保护和浏览器策略仍需人工确认。
+
+应用、服务包和扩展由构建工作流生成；仅在对应工作流成功且存在 Artifact 时才提供该构建的下载。界面截图分别输出到 `output/workbench-ui/`、`output/extension-ui/` 和 `output/linux-desktop/`，不把截图当作功能执行证据。

@@ -1,10 +1,10 @@
-# Linux 运行与打包
+# NexusMCP Studio 0.2.0 Linux 运行与打包
 
-支持 Linux x64，持续集成在 Ubuntu 22.04 构建 AppImage、Debian 安装包及独立 MCP 服务压缩包。原有 Windows 入口继续保留。
+支持 Linux x64，持续集成在 Ubuntu 22.04 构建 AppImage、Debian 安装包及独立 MCP 服务压缩包。Windows 与 Linux 共用客户端与动效。
 
 ## 从源码运行
 
-需要 Node.js 22.12+、npm，以及桌面环境。克隆项目后执行：
+建议使用 Node.js 24.9+ 与 npm（DSH 原生引擎要求 24.9+），桌面版还需要图形环境。克隆项目后执行：
 
 ```bash
 npm ci
@@ -24,10 +24,11 @@ cd preserved-mcp
 仅运行客户端本地服务接口：
 
 ```bash
+npm run build
 npm run service:start
 ```
 
-默认监听 `http://127.0.0.1:8765`，此时 MCP 尚未启动。浏览器控制台的「MCP 服务」中启动服务，或调用 `POST /api/service/start`。客户端服务数据默认保存在 `${XDG_DATA_HOME:-~/.local/share}/nexusmcp-studio`，可用 `NEXUS_DATA_DIR` 覆盖。Electron 使用自身用户数据目录下的 `service/` 保存数据。
+默认监听 `http://127.0.0.1:8765`，服务端初始 MCP 停止，网页连接后会尝试自动启动；也可通过 MCP 弹窗或调用 `POST /api/service/start`。客户端服务数据默认保存在 `${XDG_DATA_HOME:-~/.local/share}/nexusmcp-studio`，可用 `NEXUS_DATA_DIR` 覆盖。Electron 使用自身用户数据目录下的 `service/` 保存数据。
 
 ## 安装包与独立服务包
 
@@ -54,7 +55,7 @@ AppImage 需要发行版的 FUSE 2 支持（Ubuntu 22.04：`libfuse2`；较新 U
 
 独立服务包可通过 `node scripts/package-service.mjs --zip` 生成 `release/NexusMCP-Service.tar.gz`。解压后运行 `./start-mcp.sh` 直接启动 MCP，或 `./start-service.sh` 启动客户端本地接口。包内附带 Node，不要求目标电脑另外安装 Node 或 npm。服务包和原生 PTY 必须在目标系统及架构构建，不能直接复制 Windows 服务包到 Linux。
 
-GitHub Actions 的「Linux desktop and MCP service」会在 PR 和 main 推送时验证并构建以上三个产物，可在运行结果的 Artifacts 中下载。
+GitHub Actions 的「Linux desktop and MCP service」会在 PR 和 main 推送时验证并构建桌面安装包、服务包及浏览器扩展 ZIP，可在运行结果的 Artifacts 中下载。
 
 ## Linux 控制能力
 
@@ -63,6 +64,7 @@ GitHub Actions 的「Linux desktop and MCP service」会在 PR 和 main 推送�
 | MCP、临时 HTTPS 隧道、客户端、文件、审批、插件与技能 | 支持 |
 | 持久 PTY | 默认当前 `$SHELL`，回退 Bash / sh；可指定已安装的 shell |
 | 浏览器 DOM、截图、表单与网页聊天扩展 | 支持 Chrome、Chromium、Edge；独立浏览器可无头运行 |
+| 内存与动态库 | 支持统计、区域和指定地址读取；SO 加载需要 gdb 及系统允许的调试权限 |
 | 进程与磁盘读取 | 使用 `ps`、`df`，支持筛选和分页 |
 | TCP 连接读取 | 需要 `ss`（`iproute2`） |
 | 系统服务读取 | 需要正在运行的 systemd；容器可能没有 systemd |
@@ -73,7 +75,7 @@ GitHub Actions 的「Linux desktop and MCP service」会在 PR 和 main 推送�
 Debian / Ubuntu 的可选桌面依赖：
 
 ```bash
-sudo apt install xdotool wmctrl xclip imagemagick iproute2
+sudo apt install xdotool wmctrl xclip imagemagick iproute2 gdb
 ```
 
 桌面操作需要 `DISPLAY` 和当前桌面的访问权限，窗口管理器需要支持 EWMH。`computer_info` 返回会话类型、桌面和可访问性能力。无桌面会话会返回具体错误，其他 MCP 工具仍可运行。
@@ -93,3 +95,7 @@ node runtime/package-smoke.mjs  # 先构建独立服务包
 ```
 
 X11 测试可在真实桌面运行，也可用 `xvfb-run` 与窗口管理器运行。无桌面环境的测试会验证明确的能力限制。扩展 UI 测试会生成 `output/extension-ui/` 下的深浅主题截图，使用本地 AI 页面状态模拟，不访问真实账号。
+
+## 网页与公网远控
+
+运行时托管构建后的网页版；设置中可开启带访问凭证的 HTTPS 分享入口。手机可通过该链接远控本机。API 模型、内存与浏览器调试、DSH 原生工作台的使用方式见 [功能说明](WORKSPACE-FEATURES.md)。

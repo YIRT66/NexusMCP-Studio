@@ -1,37 +1,32 @@
-# 手机上查看 NexusMCP Studio 成品
+# NexusMCP Studio 0.2.0 手机访问
 
-本项目是 **Windows Electron 桌面软件**。手机无法直接运行 Windows EXE，但可以通过 GitHub Pages 查看 React 界面预览。
+手机可以打开真实远控网页，也可以查看 GitHub Pages 的静态界面预览。Windows EXE 和 Linux 安装包需要在对应电脑上运行。
 
-## 首次启用手机预览
+## 访问真实远控网页
 
-1. 打开仓库的 [Settings → Pages](https://github.com/YIRT66/NexusMCP-Studio/settings/pages)。
-2. 在 **Build and deployment → Source** 中选择 **GitHub Actions**。
-3. 在 [Actions](https://github.com/YIRT66/NexusMCP-Studio/actions) 里找到 **Mobile preview (GitHub Pages)**，等运行成功，必要时点击 **Run workflow**。
-4. 手机浏览器访问预览网址：**https://yirt66.github.io/NexusMCP-Studio/**。
+1. 在电脑运行 NexusMCP Studio，打开「设置 → 公网远控」。
+2. 点击「开启公网访问」，等待出现完整 HTTPS 分享链接。
+3. 用手机浏览器打开该链接，访问同一设备的工作空间、桌面、终端和其他已启用功能。
 
-启用后，后续推送到 `main` 会触发网页预览构建。若显示 404，检查 Actions 的部署结果和 Pages 设置；未部署成功时该网址不代表可用。
+分享链接包含访问凭证，持有人拥有远控权限。关闭入口会断开连接并撤销该链接；再次开启生成新链接。手机页面提供侧栏、模型选择、时间轴、详情弹层与文件上传。功能边界见 [公网远控说明](WORKSPACE-FEATURES.md)。
 
-### 手机上能做什么
+## GitHub Pages 静态预览
 
-- 查看 UI、切换菜单、深浅色界面，以及离线状态下可交互的本地设置。
-- 测试小屏布局，并在手机上截图反馈问题。
+静态预览地址：**https://yirt66.github.io/NexusMCP-Studio/**。
 
-### 手机上不能做什么
+首次启用时，在仓库 [Settings → Pages](https://github.com/YIRT66/NexusMCP-Studio/settings/pages) 的 Source 中选择 GitHub Actions，再查看 **Mobile preview (GitHub Pages)** 工作流。之后推送 `main` 会触发构建；地址是否可访问，以部署结果为准。
 
-- 不会连接或控制你的 Windows 电脑；网站是静态前端，没有 MCP 服务。
-- 不能从网页执行真实的 PowerShell、读取本机文件或启动桌面浏览器。
-- 不能直接在 Android 或 iOS 运行 Windows EXE。
+静态预览只用于查看布局、主题和离线交互，没有运行时，不能控制电脑、执行终端或连接真实模型。
 
-## 获取 Windows 安装包
+## 电脑安装包
 
-1. 打开 [Actions](https://github.com/YIRT66/NexusMCP-Studio/actions)，选择 **Build Windows desktop (EXE)**。
-2. 打开成功运行的记录，在 **Artifacts** 中下载 `NexusMCP-Studio-Windows-x64`。
-3. 解压后得到 `NexusMCP-Studio-Setup.exe`，留到电脑开机后安装测试。
+在 [Actions](https://github.com/YIRT66/NexusMCP-Studio/actions) 的成功运行中下载 Artifact：
 
-安装包打包流程依赖 npm、Windows 运行时与 cloudflared 下载，可能遇到网络／依赖错误；只有 **构建成功且出现 Artifact** 才表示已生成安装包。构建产物不代表真实 Windows MCP 功能已通过人工验收。
+- **Build Windows desktop (EXE)**：`NexusMCP-Studio-Windows-x64`，内含 `NexusMCP-Studio-Setup.exe`。
+- **Linux desktop and MCP service**：`NexusMCP-Studio-Linux-x64`，包含 AppImage、DEB、独立服务包和扩展 ZIP。
 
-## 开发者注意
+只有成功构建且显示 Artifact 时，才表示安装包已生成。安装包仍需在目标电脑核对系统权限和桌面环境。
 
-- Pages 构建会设置 `GITHUB_PAGES=true`，使用 Vite 的 `/NexusMCP-Studio/` 静态资源前缀。
-- `VITE_WEB_PREVIEW=true` 只给网页版本显示“预览模式”标识，不影响 Electron 桌面版本。
-- 预览网页不需要账号登录；此仓库和 Pages 都是公开资源，不要将任何私密凭据写进前端源码。
+## 预览构建配置
+
+`GITHUB_PAGES=true` 设置静态资源前缀，`VITE_WEB_PREVIEW=true` 启用离线预览标识并停用运行时自动连接。真实远控网页由运行时托管，使用受保护的 HTTPS 入口，不使用 Pages 承载设备控制。

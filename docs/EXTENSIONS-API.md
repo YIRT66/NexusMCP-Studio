@@ -1,4 +1,4 @@
-# 插件、技能与 MCP 扩展接口（已实现）
+# NexusMCP Studio 0.2.0 插件与技能接口
 
 与 UI 的 `frontend/src/extensions.ts` 完全一致。服务实现位于 `runtime/extensions.mjs` 和 `runtime/extension-install.mjs`，无需改 UI 请求格式。
 
@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | GET | `/api/extensions` | 返回 `{items:ExtensionEntry[]}`，从本机持久化索引恢复 |
 | POST | `/api/extensions/install` | 接受下述安装请求，返回 202 和 `ExtensionEntry`；此时为 `installing` |
+| POST | `/api/extensions/upload` | 网页二进制上传，最大 64 MB；查询参数为 `filename`、`kind` 和可选 `name`，返回 202 条目 |
 | PATCH | `/api/extensions/:id` | `{enabled:boolean}`，启用或停用；启用异步握手，停用会关闭真实 MCP 连接和进程 |
 | DELETE | `/api/extensions/:id` | 结束安装、关闭连接、删除应用安装的副本；成功 204，不删除原始来源 |
 
@@ -49,7 +50,7 @@ Node 依赖安装跳过生命周期脚本，PyPI 使用 wheel，不执行源码�
 
 ## 插件目录格式
 
-优先读取 `nexus-plugin.json`；也识别 `plugin.json`、`.claude-plugin/plugin.json`、`.codex-plugin/plugin.json` 的元信息，以及 `.mcp.json` / `mcp.json` 中的 MCP 连接。`skills/` 等目录内的 `SKILL.md` 自动发现（最多 200 个、深度 6）。
+优先读取 `nexus-plugin.json`；也识别 `plugin.json`、`.claude-plugin/plugin.json`、`.codex-plugin/plugin.json`、`dsh-plugin.json`、`.dsh-plugin/plugin.json` 的元信息，以及 `.mcp.json` / `mcp.json` / `.dsh/mcp.json` 中的 MCP 连接。`skills/` 等目录内的 `SKILL.md` 自动发现（最多 200 个、深度 6）。
 
 最小 Node MCP 插件可由以下三个完整文件组成：
 
@@ -111,7 +112,7 @@ stdio 配置支持 `command,args,env,cwd`，模板支持 `${PLUGIN_DIR}`、`${NO
 
 启用后，技能出现在 MCP 的 `skills_list`。GPT 通过 `skill_read({id})` 获取主说明，通过 `skill_read({id,relativePath:'references/guide.md'})` 按需读取资源。停用后立即从列表撤下，旧 ID 也不能继续读取。
 
-技能是工作方法和附带资源，不是安装后自动执行的脚本，也不代表本机内置了大模型。GPT 仍在网页对话中接收用户任务，再调用当前 MCP 工具执行。
+技能是工作方法和附带资源，不是安装后自动执行的脚本，也不代表本机内置了大模型。网页模型与 API 模型按当前任务需要读取技能，再调用启用的工具执行。
 
 外接 MCP 工具以 `ext_<扩展前缀>_<散列>_<原工具名>` 注册，防止重名；调用会转发到真实 MCP 客户端，返回真实结果，并进入同一操作轨迹。逐次审批模式下，外接工具一律审批。已安装的第三方工具不能用 `readOnlyHint` 自行绕过审批。
 
@@ -122,3 +123,7 @@ stdio 配置支持 `command,args,env,cwd`，模板支持 `${PLUGIN_DIR}`、`${NO
 所有副本和索引在 `NEXUS_DATA_DIR/extensions/`。删除只作用于按 UUID 创建的应用安装目录，保留原本地目录、ZIP 和 Git 远端。停用关闭真实 stdio 进程或 HTTP 会话。停止 MCP 会暂停外接连接；再次启动会恢复启用的扩展。退出运行时会结束安装任务、关闭连接及子进程。
 
 测试：`node --test runtime/extensions.test.mjs` 验证本地技能/资源、ZIP 越界拒绝、stdio/HTTP MCP 真实转发、审批、进程启停、移除和持久化。`node runtime/extensions-network-smoke.mjs` 验证 Git/npm/PyPI 真实网络安装与 MCP 调用。
+
+## DSH 原生插件
+
+原生 Cordis bundle 与界面插件通过「DSH 原生」分类安装，使用官方 `@deepseek-ai/dsh@0.2.1-rc.5` 在独立工作台运行，需要 Node.js 24.9+。它们不作为普通 MCP 清单直接加载。标准 MCP 与 SKILL.md 可按上文安装。引擎目录、版本和操作说明见 [功能说明](WORKSPACE-FEATURES.md)。

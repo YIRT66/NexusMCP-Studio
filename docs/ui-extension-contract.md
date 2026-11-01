@@ -1,76 +1,46 @@
-# 插件和技能的 UI 接入
+# NexusMCP Studio 0.2.0 界面接入
 
-本文件描述 UI 需要的扩展管理接口。具体插件格式、依赖解析、安装、隔离与运行均由服务端实现；界面不执行安装脚本。UI 不把内置 MCP 工具开关当作插件安装。
+## 入口与状态
 
-## 前端位置
+- `frontend/src/DesktopApp.tsx`：桌面与网页共用的导航和主界面。
+- `frontend/src/components/ConversationWorkbench.tsx`：对话、模型选择、输入与时间轴。
+- `frontend/src/components/ExtensionManager.tsx`：插件、技能、MCP 与 DSH 原生工作台。
+- `frontend/src/components/SettingsDialog.tsx`：外观、模型、连接、权限和公网入口。
+- `frontend/src/connection.ts`：HTTP 请求、WebSocket 连接与重连。
+- `frontend/src/store.ts`、`session-ui.ts`：运行时事件、工作区、会话和草稿。
 
-- 当前入口：`frontend/src/DesktopApp.tsx`，由 `frontend/src/main.tsx` 加载。
-- 插件与技能管理：`frontend/src/components/ExtensionManager.tsx`。
-- 接口适配：`frontend/src/extensions.ts`，可统一修改接口路径与数据结构。
-- 设置：`frontend/src/components/SettingsDialog.tsx`。
-- 桌面开发启动：上级目录 `一键启动开发版.bat` → `START-FRONTEND.bat` → `npm run dev` → Electron。
+桌面运行 `npm run dev` 或 `START-FRONTEND.bat` / `./start-studio.sh`。Electron 启动本机运行时并使用其实际端口；运行时托管的网页版使用同源接口。静态 Pages 预览不连接运行时。
 
-## 扩展数据
+## 模型与会话
 
-```ts
-type ExtensionEntry = {
-  id: string;
-  name: string;
-  kind: 'plugin' | 'skill' | 'mcp';
-  enabled: boolean;
-  description?: string;
-  version?: string;
-  source?: string;
-  status?: 'installed' | 'installing' | 'error';
-  error?: string;
-};
-```
+模型菜单按可折叠的 MCP / API 分类展示。网页模型使用 `/api/webchat/send`；API 模型使用 `/api/chat/send` 和 `/api/chat/stop`。配置使用 `/api/model-profiles`，不通过浏览器存储保存密钥。
 
-| 请求 | 约定 |
+消息与工具通过 `sessionId/requestId` 归属会话；草稿、模型选择和时间轴快照按会话保存。`message.upsert` 更新已有回复，时间轴使用真实记录的时间，不构造演示操作或未知耗时。
+
+权限通过 `/api/permissions` 确认。API 只读任务不向模型提供修改工具；工作区模式采用安全审批，不是操作系统沙箱。完整 HTTP / WebSocket 契约见 [客户端接口](CLIENT-SERVICE-INTEGRATION.md)。
+
+## 扩展管理
+
+| 请求 | 界面行为 |
 | --- | --- |
-| `GET /api/extensions` | 返回 `ExtensionEntry[]` 或 `{items: ExtensionEntry[]}` |
-| `POST /api/extensions/install` | 接收下方安装参数，返回 `ExtensionEntry`。耗时安装应尽快返回 `status: 'installing'`；UI 每 2 秒刷新列表 |
-| `PATCH /api/extensions/:id` | 接收 `{enabled: boolean}`，更新启停状态 |
-| `DELETE /api/extensions/:id` | 移除扩展，返回 204 或 JSON |
+| GET `/api/extensions` | 读取 `{items:ExtensionEntry[]}` |
+| POST `/api/extensions/install` | 发送本地路径、Git、包名或 MCP 地址，返回安装中的条目 |
+| POST `/api/extensions/upload` | 网页上传文件，使用二进制请求体及文件名、类型等查询参数 |
+| PATCH `/api/extensions/:id` | `{enabled:boolean}`，请求启用或停用 |
+| DELETE `/api/extensions/:id` | 删除应用安装的副本 |
 
-```json
-{
-  "kind": "skill",
-  "name": "可选的自定义名称",
-  "source": {"type": "local", "value": "F:\\skills\\example"}
-}
-```
+条目包含 `id/name/kind/enabled/status/error` 等字段。返回 202 只代表开始处理；界面在安装中刷新列表，以 `installed/error` 显示实际结果。桌面路径选择器只返回路径，网页使用原生文件选择器上传。格式、大小、依赖和存储规则见 [插件接口](EXTENSIONS-API.md)。
 
-`source.type` 支持 `local`（文件或目录完整路径）、`git`（HTTPS / SSH 仓库地址）、`registry`（带来源的包名，例如 `npm:...` / `pypi:...`）、`mcp`（HTTP / HTTPS MCP 地址）。`kind: 'mcp'` 时来源使用 `mcp`。
+DSH 原生插件使用 `/api/dsh` 与 `/api/dsh/plugins`，在固定版本官方运行时的独立工作台执行。标准 MCP 和 SKILL.md 可直接接入当前会话。
 
-桌面选择器仅返回用户选中的本机路径；不读文件，不触发安装。由用户点击安装后才发送接口请求。服务未连接时安装按钮不可用；接口未实现或安装失败时显示真实错误，不新增伪造的安装记录。
+## MCP 与公网入口
 
-内置工具保留在“内置工具”分类，继续使用现有 `tools` 状态和 `POST /api/settings {disabled}` 接口。外观偏好保存在本机 `nexus.preferences`，密钥不会写入该存储。模型与权限配置继续通过 `POST /api/settings` 提交；服务端可以在此基础上适配。
+首次连接运行时后，`ensureMcpStarted()` 读取实际状态并尝试启动 MCP。自动启动与手动弹窗共享请求；用户停止后，本次客户端运行不自动重新开启。状态通过 `service.state` 更新。
 
-桌面壳的 Vite 服务使用可用的本地端口，将 HTTP 与 WebSocket 代理到 `127.0.0.1:8765`，统一转发本机来源。此次只接入 UI，不启动或修改服务进程。
+MCP 弹窗显示服务返回的完整连接地址，不自行拼接域名或随机路径。公网远控设置则使用 `/api/public-access`；两种地址用途不同。远程页面不提供公网入口或 DSH 工作台管理。
 
-## 会话界面接入
+## 界面与数据
 
-会话界面位于 `frontend/src/components/ConversationWorkbench.tsx`，工作区与本地会话快照位于 `frontend/src/session-ui.ts`。对话、轨迹、执行详情、目标与计划模式共用实际收到的 `messages` 和 `calls` 状态，不填充演示记录。
+工作区、会话名称、草稿和外观偏好保存为本机界面状态；执行和保存结果以运行时确认事件为准。会话导出的 ZIP 包含 `conversation.md`、`operations.json` 和 `session.json`，不包含模型密钥。
 
-| 请求 | UI 期望 |
-| --- | --- |
-| `POST /api/permissions` | `{mode:'readonly'\|'workspace'\|'full',workspace,sessionId}`；返回 `{mode}`。发送任务前会校验返回值，服务未确认时不发送任务 |
-| `GET /api/models` | `[{id,name?}]` 或 `{models:[...]}`；没有列表时只显示已配置模型与管理入口 |
-| `POST /api/models/select` | `{model,sessionId}`；返回 `{model}` 后才更新所选模型 |
-| `POST /api/feedback` | `{sessionId,text}` |
-| `POST /api/sessions/:id/compact` | 返回 `{messages}` 或 `{summary}`，不在客户端伪造压缩结果 |
-
-`agent.run` 的 data 保留 `text`，并附带 `sessionId`、`workspace`、`permission`、`planning`、`goal`、`attachments`（本机文件路径数组）。服务必须实施相应权限和工作区边界。
-
-原生文件选择和 ZIP 导出由 Electron 窄接口完成，不经过安装器或运行时。ZIP 包含 `conversation.md`、`operations.json`、`session.json`，不导出模型设置或 API Key。会话菜单支持文件、目标、计划、反馈、压缩、权限、模型和下载日志。
-
-## MCP 启动与地址弹窗
-
-顶部“启动 MCP 服务”按钮打开 `McpServiceDialog.tsx`。若控制台尚未连接，会先建立既有 WebSocket 连接；连接后只发送一次 `POST /api/service/start {}`。后续通过 `service.state` 事件读取 `phase`、`url`、`localOnly`、`error` 等真实状态。
-
-软件首次连接运行时后会自动调用 `ensureMcpStarted()`。它先读取真实 bootstrap 状态，服务已启动时直接复用；自动启动与手动弹窗共享同一请求。用户停止后，本次软件运行不会自动重新开启。自动启动失败会显示实际错误，可从 MCP 弹窗重试。开发版 HTTP 与 WebSocket 使用同源代理，并转发实际运行时端口对应的 Host / Origin。
-
-侧栏工作区支持折叠、新建会话、展开更多、重命名和移除；聊天菜单支持重命名和删除应用内保存的会话。删除活动会话时切换到同一工作区的其他会话，没有其他会话时新建空会话。工作区折叠与名称、聊天自定义名称随本地会话一起保存。自定义聊天名不会被后续消息覆盖。
-
-`url` 是服务返回的完整 MCP 连接地址，UI 原样显示和复制，不自行拼接临时域名、路径或身份验证信息。运行中再次打开仅查看地址；关闭弹窗不会停止服务。停止按钮调用 `POST /api/service/stop {}`。启动与停止接口若返回 `ServiceState`，界面也立即采用该状态。
+桌面与网页共用主题和动效，响应系统减少动态效果偏好。弹窗应管理焦点和关闭行为，手机浮层应避免被内容滚动容器裁剪；任何详情面板都不能遮住其所属视图的输入与操作控件。
