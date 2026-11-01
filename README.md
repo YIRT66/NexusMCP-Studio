@@ -7,6 +7,14 @@
 
 GitHub 仓库直接以本项目为根目录，可克隆到任意本地文件夹。原 HanCode 项目保留。本阶段交付可运行的 React 18 + TypeScript + Vite 前端，采用中性黑白深浅双主题、Tailwind CSS、Framer Motion、Lucide、xterm.js 与 Zustand。最终界面按用户最新参考图调整为简洁会话布局：左侧导航与当前会话，中央留白和输入框，输入框内选择模型与权限。取消灵动岛、发光球、科技感网格和宣传型标题。
 
+## Linux 支持
+
+Linux x64 支持源码运行、AppImage / DEB 桌面安装包及独立 MCP 服务包。安装 Node.js 22.12+ 后执行 `./start-studio.sh` 启动开发版，执行 `./build-linux.sh` 生成安装包。仅运行 MCP 可使用 `preserved-mcp/start-mcp.sh`。详细安装步骤、依赖和能力说明见 [Linux 指南](docs/LINUX.md)。
+
+Linux 终端默认使用当前 Shell / Bash，浏览器支持 Chrome、Chromium 和 Edge。X11 桌面控制需要 `xdotool wmctrl xclip imagemagick`；Wayland 桌面控制及 Windows UIA 暂不支持，终端、文件与浏览器功能可以正常使用。
+
+浏览器扩展 1.1 增加独立连接状态、会话网页快捷入口、可折叠网页发送区、Ctrl / ⌘ + Enter 发送和回复复制，并跟随系统深浅主题。使用步骤见 [扩展说明](browser-plugin/README.md)。
+
 ## 桌面启动与打包
 
 软件使用 Electron 内置的 Chromium，以独立窗口运行，支持原生标题栏、最小化、最大化、关闭、单实例和窗口位置恢复。打包版直接从应用资源加载界面，不需要浏览器、Node.js 或 Vite 开发服务器。
@@ -15,7 +23,7 @@ GitHub 仓库直接以本项目为根目录，可克隆到任意本地文件夹�
 - **开发版**：双击项目根目录的 `START-FRONTEND.bat`。首次需要安装 Node.js 22.12+ 和下载依赖，之后自动启动带热更新的桌面窗口。关闭软件会释放内部 Vite 服务；开发窗口按 F12 打开开发工具。
 - **重新打包**：双击项目根目录的 `BUILD-DESKTOP.bat`，输出到 `release/`。
 
-命令行：`npm ci` 安装依赖及 Electron 内核；`npm run dev` 启动桌面开发版；`npm run build` 构建界面；`npm start` 用桌面窗口加载构建产物；`npm run dist` 生成 Windows 便携 EXE；`npm run pack:desktop` 生成解包目录。仅需网页调试时可用 `npm run dev:web`。
+命令行：`npm ci` 安装依赖及 Electron 内核；`npm run dev` 启动桌面开发版；`npm run build` 构建界面；`npm start` 用桌面窗口加载构建产物；`npm run dist` 生成 Windows NSIS 安装器；`npm run pack:desktop` 生成解包目录。仅需网页调试时可用 `npm run dev:web`。
 
 客户端现已内置启动 runtime/server.mjs，本机服务支持 MCP 启停、cloudflared 临时映射、真实终端、文件和系统控制、扩展安装及网页聊天桥接。Electron 使用动态本机端口并保存配对信息，退出时清理子进程。详见 docs/CLIENT-SERVICE-INTEGRATION.md。
 

@@ -1,0 +1,65 @@
+name: Linux desktop and MCP service
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            preserved-mcp/package-lock.json
+      - name: Install Linux desktop test dependencies
+        run: sudo apt-get update && sudo apt-get install -y xvfb openbox xdotool wmctrl xclip imagemagick iproute2 libgtk-3-0 libnss3 libasound2 libgbm1
+      - run: npm ci
+      - run: npm ci --prefix preserved-mcp --omit=dev --no-audit --no-fund
+      - name: Install test browser
+        run: npx --no-install playwright-core install --with-deps chromium
+      - name: Verify source and MCP integration
+        run: |
+          npm run typecheck
+          npm run test:mcp
+          xvfb-run -a sh -c 'openbox >/tmp/nexus-openbox.log 2>&1 & npm test && node scripts/test-browser-extension.mjs'
+          node scripts/test-extension-popup.mjs
+        env:
+          XDG_SESSION_TYPE: x11
+      - run: npm run prepare:runtime
+      - name: Build Linux service and desktop packages
+        run: |
+          npm run dist:linux
+          node runtime/package-smoke.mjs
+          node scripts/package-service.mjs --zip
+          npm run build:browser-extension
+      - name: Verify source and packaged Electron desktop on X11
+        run: |
+          xvfb-run -a sh -c 'openbox >/tmp/nexus-openbox.log 2>&1 & node scripts/test-linux-desktop.mjs && NEXUS_DESKTOP_EXECUTABLE="$PWD/release/linux-unpacked/nexusmcp-studio" node scripts/test-linux-desktop.mjs'
+        env:
+          XDG_SESSION_TYPE: x11
+          NEXUS_TEST_NO_SANDBOX: '1'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NexusMCP-Studio-Linux-x64
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/NexusMCP-Service.tar.gz
+            release/NexusMCP-Browser-Extension.zip
+          if-no-files-found: error
+          retention-days: 14

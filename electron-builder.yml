@@ -35,3 +35,19 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: NexusMCP Studio
   deleteAppDataOnUninstall: false
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  executableName: nexusmcp-studio
+  category: Development
+  maintainer: NexusMCP Studio
+  artifactName: NexusMCP-Studio-${version}-${arch}.${ext}
+  desktop:
+    entry:
+      Name: NexusMCP Studio
+      Comment: Local MCP service and AI browser workspace
+      Terminal: 'false'

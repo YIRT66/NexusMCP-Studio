@@ -10,7 +10,7 @@ const {unzipSync}=require('fflate');
 const YAML=require('yaml');
 const git=require('isomorphic-git');
 const http=require('isomorphic-git/http/node');
-const node=process.platform==='win32'?path.join(engine,'runtime/node.exe'):process.execPath;
+const node=(await import('../preserved-mcp/platform.cjs')).default.runtimePaths(engine).node;
 const children=new Set();
 let aborted=false;
 process.once('SIGTERM',()=>{aborted=true;for(const c of children)c.kill();process.exit(1)});

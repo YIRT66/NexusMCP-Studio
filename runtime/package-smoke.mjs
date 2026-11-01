@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
 const packageRoot=path.resolve(fileURLToPath(new URL('../release/NexusMCP-Service',import.meta.url)));
 const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-package-test-'));
-const child=spawn(path.join(packageRoot,'preserved-mcp/runtime/node.exe'),[path.join(packageRoot,'runtime/server.mjs')],{cwd:directory,windowsHide:true,env:{...process.env,NEXUS_DATA_DIR:directory,NEXUS_PORT:'0',MCP_NO_TUNNEL:'1'},stdio:['ignore','pipe','pipe','ipc']});
+const child=spawn(path.join(packageRoot,'preserved-mcp/runtime/'+(process.platform==='win32'?'node.exe':'node')),[path.join(packageRoot,'runtime/server.mjs')],{cwd:directory,windowsHide:true,env:{...process.env,NEXUS_DATA_DIR:directory,NEXUS_PORT:'0',MCP_NO_TUNNEL:'1'},stdio:['ignore','pipe','pipe','ipc']});
 let diagnostic='';child.stdout.on('data',c=>diagnostic+=c);child.stderr.on('data',c=>diagnostic+=c);
 try{
  const ready=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error(diagnostic)),15000);child.on('message',m=>{if(m.type==='runtime.ready'){clearTimeout(timer);resolve(m)}});child.once('error',reject);child.once('exit',code=>reject(new Error('包内进程退出 '+code+diagnostic)))});
@@ -21,5 +21,5 @@ try{
  const skillList=await api('/tools/call',{name:'skills_list',args:{}});assert.equal(JSON.parse(skillList.content[0].text)[0].name,'打包验证技能');
  const badWindow=await api('/tools/call',{name:'window_control',args:{handle:'0',operation:'focus'}});assert.equal(badWindow.isError,true);assert.match(badWindow.content[0].text,/窗口句柄无效/);
  await api('/service/stop',{});assert.equal((await api('/bootstrap')).service.phase,'stopped');
- console.log(JSON.stringify({packagedRuntime:true,tools:boot.tools.length,nativePty:true,powershellUtf8:true,packagedInstaller:true,independentWorkingDirectory:true}));
+ console.log(JSON.stringify({packagedRuntime:true,tools:boot.tools.length,nativePty:true,platform:process.platform,packagedInstaller:true,independentWorkingDirectory:true}));
 }finally{if(child.connected){child.send({type:'shutdown'});await new Promise(r=>{child.once('exit',r);setTimeout(()=>{child.kill();r()},8000).unref()})}}

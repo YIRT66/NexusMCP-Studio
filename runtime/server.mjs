@@ -10,12 +10,13 @@ import { instructions } from '../preserved-mcp/instructions.mjs';
 import { ExtensionManager } from './extensions.mjs';
 import { WebchatRelay } from './webchat-relay.mjs';
 import {ClientReplies} from './client-replies.mjs';
+import platform from '../preserved-mcp/platform.cjs';
 const require = createRequire(new URL('../preserved-mcp/package.json', import.meta.url));
 const express = require('express');
 const { WebSocketServer, WebSocket } = require('ws');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dataDir = path.resolve(process.env.NEXUS_DATA_DIR || path.join(process.env.LOCALAPPDATA || os.homedir(), 'NexusMCPStudio'));
+const dataDir = path.resolve(process.env.NEXUS_DATA_DIR || platform.dataDirectory());
 await fs.mkdir(dataDir, { recursive: true });
 const configFile = path.join(dataDir, 'settings.json');
 const bridgeKeyFile=path.join(dataDir,'browser-bridge.key');let bridgeKey;try{bridgeKey=(await fs.readFile(bridgeKeyFile,'utf8')).trim()}catch{}if(!/^[a-f0-9]{64}$/.test(bridgeKey||'')){bridgeKey=randomBytes(32).toString('hex');await fs.writeFile(bridgeKeyFile,bridgeKey,{mode:0o600})}
@@ -121,8 +122,8 @@ async function start() {
   extensions.resume();
   logs = []; approvals = [];
   update({ phase: 'starting', url: '', localUrl: '', error: '', lastClient: '', clientAt: 0 });
-  const executable = process.platform === 'win32' ? path.join(root, 'preserved-mcp/runtime/node.exe') : process.execPath;
-  const current = spawn(executable, [path.join(root, 'preserved-mcp/server.mjs')], { cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: { ...process.env, MCP_EMBEDDED: '1', MCP_PORT: '0', MCP_DATA_DIR: dataDir, MCP_STORAGE_DIR: dataDir, MCP_URL_FILE: path.join(dataDir, 'PUBLIC-MCP-URL.txt'), CLOUDFLARED_PATH: process.env.CLOUDFLARED_PATH || path.join(root, 'preserved-mcp/bin/cloudflared.exe'), NEXUS_STANDALONE: '1' } });
+  const { node: executable, cloudflared } = platform.runtimePaths(path.join(root, 'preserved-mcp'));
+  const current = spawn(executable, [path.join(root, 'preserved-mcp/server.mjs')], { cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: { ...process.env, ...(cloudflared && !process.env.CLOUDFLARED_PATH ? { CLOUDFLARED_PATH: cloudflared } : {}), MCP_EMBEDDED: '1', MCP_PORT: '0', MCP_DATA_DIR: dataDir, MCP_STORAGE_DIR: dataDir, MCP_URL_FILE: path.join(dataDir, 'PUBLIC-MCP-URL.txt'), NEXUS_STANDALONE: '1' } });
   child = current;
   current.on('message', handle);
   current.stdout.on('data', log); current.stderr.on('data', log);
@@ -181,7 +182,7 @@ app.post('/api/webchat/stop',route(async(_req,res)=>{await replies.cancel(webSta
 app.get('/api/models',(_req,res)=>res.json((webState.providers||[]).map(p=>({id:p.id,name:p.name}))));
 app.post('/api/models/select',route(async(req,res)=>{const result=await webCommand('open',{provider:req.body.model});res.json({model:result.provider});}));
 app.post('/api/permissions',route(async(req,res)=>{if(!['readonly','workspace','full'].includes(req.body.mode))throw new Error('权限模式无效');await saveSettings({mode:req.body.mode==='full'?'overdrive':'safe'});res.json({mode:req.body.mode,note:'远程读取直接执行，修改操作在安全模式逐次审批；工作区范围不作为操作系统沙盒'});}));
-app.get('/api/bootstrap', (_req, res) => res.json({ mode: settings.mode, settings, tools: manifest(availableTools()), servers: extensions.list().filter(e=>e.kind==='mcp').map(e=>({id:e.id,name:e.name,url:e.source,connected:e.connected,tools:e.toolCount})), webchat:webState,clientReplies:replies.messages(),extensions:extensions.list(),phase:webState.busy?'executing':'idle', service: state, calls, logs, approvals, history, terminalId: terminal }));
+app.get('/api/bootstrap', (_req, res) => res.json({ platform: process.platform, terminalShells: Object.keys(platform.terminalShells()), mode: settings.mode, settings, tools: manifest(availableTools()), servers: extensions.list().filter(e=>e.kind==='mcp').map(e=>({id:e.id,name:e.name,url:e.source,connected:e.connected,tools:e.toolCount})), webchat:webState,clientReplies:replies.messages(),extensions:extensions.list(),phase:webState.busy?'executing':'idle', service: state, calls, logs, approvals, history, terminalId: terminal }));
 app.get('/api/extensions',(_req,res)=>res.json({items:extensions.list()}));
 app.post('/api/extensions/install',route(async(req,res)=>res.status(202).json(await extensions.install(req.body))));
 app.patch('/api/extensions/:id',route(async(req,res)=>res.status(202).json(await extensions.enable(req.params.id,req.body.enabled))));
@@ -210,7 +211,7 @@ wss.on('connection', ws => {
       else if(type==='agent.run'){await sendChat(data);}
       else if(type==='webchat.stop'){await replies.cancel(webState.sessionId);await webCommand('stop');webState={...webState,busy:false,status:'已停止等待 MCP 回复'};emit('webchat.state',webState);}
       else if (type === 'mode.change') await saveSettings({mode:data.mode});
-      else if (type === 'terminal.create') { const shells = { pwsh: undefined, cmd: 'cmd.exe', bash: 'bash.exe', wsl: 'wsl.exe' }; if (!(data.shell in shells)) throw new Error('无效终端环境'); const result = decode(await rpc('terminal_create', { shell: shells[data.shell], cols: data.cols, rows: data.rows })); attachTerminal(result.id); }
+      else if (type === 'terminal.create') { const shells = platform.terminalShells(); const name = data.shell || 'default'; if (!Object.hasOwn(shells, name)) throw new Error('当前系统不支持此终端环境'); const result = decode(await rpc('terminal_create', { shell: shells[name], cols: data.cols, rows: data.rows })); attachTerminal(result.id); }
       else if (type === 'terminal.input') decode(await rpc('terminal_write', { id: data.id, data: data.text }));
       else if (type === 'terminal.resize') decode(await rpc('terminal_resize', data, 'preview'));
       else if (type === 'terminal.close') { decode(await rpc('terminal_close', data)); terminal = null; emit('terminal.closed', {}); }

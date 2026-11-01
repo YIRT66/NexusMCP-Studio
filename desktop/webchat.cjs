@@ -1,4 +1,4 @@
-const {WebContentsView}=require('electron');
+const {app,WebContentsView}=require('electron');
 const fs=require('node:fs');
 const path=require('node:path');
 
@@ -15,7 +15,8 @@ class WebChat{
  constructor(window,publish,stateFile){
   this.window=window;this.publish=publish;this.pages=new Map();this.provider='chatgpt';this.sessionId='default';
   this.job=null;this.visible=false;this.opening=false;this.lastState='';this.polling=false;this.disposed=false;
-  this.source=fs.readFileSync(path.join(__dirname,'../browser-plugin/adapter.js'),'utf8');
+  const pluginDirectory=app.isPackaged?path.join(process.resourcesPath,'browser-plugin'):path.join(__dirname,'../browser-plugin');
+  this.source=fs.readFileSync(path.join(pluginDirectory,'adapter.js'),'utf8');
   this.stateFile=stateFile;this.savedURLs={};this.savedProviders={};this.lastHistory='';try{const saved=JSON.parse(fs.readFileSync(stateFile,'utf8'));this.savedURLs=saved.urls||saved;this.savedProviders=saved.providers||{}}catch{}
   this.timer=setInterval(()=>void this.poll(),600);
  }

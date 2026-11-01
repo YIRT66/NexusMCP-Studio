@@ -43,7 +43,10 @@ globalThis.nexusWebchatAdapter = async function (request = {}) {
   if(input instanceof HTMLTextAreaElement||input instanceof HTMLInputElement){const proto=input instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(input,request.text);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));}
   else {const selection=getSelection(),range=document.createRange();range.selectNodeContents(input);selection.removeAllRanges();selection.addRange(range);if(!document.execCommand('insertText',false,request.text)){input.textContent=request.text;input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:request.text}))}}
   await new Promise(r=>setTimeout(r,200));
-  if(value(input).trim()!==request.text.trim())throw new Error('网页输入框未接受消息，未点击发送');
+  // contenteditable may expose a blank <div><br></div> as three newlines after insertText.
+  // Compare paragraph boundaries without accepting lost text or changes to indentation.
+  const normalize=text=>text.replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').replace(/\n{3,}/g,'\n\n').trim();
+  if(normalize(value(input))!==normalize(request.text))throw new Error('网页输入框未接受消息，未点击发送');
   const button=sendButton();if(!button||button.disabled||button.getAttribute('aria-disabled')==='true')throw new Error('未找到可用的发送按钮，消息已填入网页但未发送，请检查网页');
   button.click();return {dispatched:true,before,after:basicStatus()};
 };

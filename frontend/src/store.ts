@@ -2,6 +2,7 @@ import {create} from 'zustand';
 import type {Settings,Mode,View,Phase,Tool,ToolCall,Message,Approval,Frame,ServerEntry,ServiceState,ServiceLog,HistoryEntry,WebchatState} from './types';
 import {useSessionUI} from './session-ui';
 interface State {
+ platform:string;terminalShells:string[];
  webchat:WebchatState;
  connected:boolean;connecting:boolean;mode:Mode;phase:Phase;view:View;sidebar:boolean;settingsOpen:boolean;
  settings:Settings;service:ServiceState;tools:Tool[];calls:ToolCall[];logs:ServiceLog[];history:HistoryEntry[];messages:Message[];approvals:Approval[];servers:ServerEntry[];
@@ -9,6 +10,7 @@ interface State {
  terminalId:string|null;terminalVersion:number;terminalChunks:string[];set:(patch:Partial<State>)=>void;receive:(event:{type:string;data:any})=>void;
 }
 export const useStudio=create<State>((set,get)=>({
+ platform:'',terminalShells:['default'],
  webchat:{provider:'chatgpt',providers:[],status:'打开 AI 网页并登录',busy:false},
  connected:false,connecting:true,mode:'safe',phase:'idle',view:'desktop',sidebar:true,settingsOpen:false,
  settings:{provider:'',model:'',baseUrl:'',apiKey:'',frameRate:1,theme:'dark',fontSize:14,detail:'standard',autoCollapse:true,mode:'safe',disabled:[],prompt:''},

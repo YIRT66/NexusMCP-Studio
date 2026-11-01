@@ -44,7 +44,11 @@ async function poll(){
  }catch(e){status=e.message;changed()}finally{polling=false}
 }
 async function connect(url){if(!/^ws:\/\/127\.0\.0\.1:\d+\/webchat\/extension\/[a-f0-9]{64}$/.test(url))throw new Error('请粘贴客户端提供的完整本机连接地址');endpoint=url;clearTimeout(retry);if(socket){socket.onclose=null;socket.close()}socket=new WebSocket(endpoint);socket.onopen=()=>{status='浏览器扩展已连接';changed();save()};socket.onmessage=async e=>{try{const m=JSON.parse(e.data);if(!m.id)return;try{const result=await command(m.operation,m.data);send({type:'result',id:m.id,result})}catch(error){send({type:'result',id:m.id,error:error.message})}}catch{}};socket.onclose=()=>{status='客户端未连接，正在重试';retry=setTimeout(()=>connect(endpoint).catch(()=>{}),3000)};socket.onerror=()=>{};await save();return {connecting:true}}
-chrome.runtime.onMessage.addListener((message,_sender,respond)=>{if(message.type==='nexus.connect'){connect(message.url).then(respond,e=>respond({error:e.message}));return true}if(message.type==='nexus.status'){respond({connected:socket?.readyState===1,endpoint,...state()})}});
+chrome.runtime.onMessage.addListener((message,_sender,respond)=>{if(message.type==='nexus.connect'){connect(message.url).then(respond,e=>respond({error:e.message}));return true}if(message.type==='nexus.disconnect'){
+ if(job){respond({error:'当前会话仍在等待回复，请先在客户端停止任务。'});return}
+ clearTimeout(retry);endpoint='';if(socket){socket.onclose=null;socket.close();socket=undefined}status='已断开客户端连接';save().then(()=>respond({ok:true}),e=>respond({error:e.message}));return true
+ }if(message.type==='nexus.focus-bound'){tab().then(async target=>{await chrome.tabs.update(target.id,{active:true});await chrome.windows.update(target.windowId,{focused:true});respond({ok:true})},e=>respond({error:e.message})).catch(e=>respond({error:e.message}));return true
+ }if(message.type==='nexus.status'){respond({connected:socket?.readyState===1,connecting:socket?.readyState===0,endpoint,...state()})}});
 chrome.tabs.onUpdated.addListener((id,change)=>{if(!change.url)return;for(const b of Object.values(bindings))if(b.tabId===id)b.url=change.url;save()});
 chrome.runtime.onStartup?.addListener(async()=>{const saved=await chrome.storage.local.get(['bindings']);for(const binding of Object.values(saved.bindings||{}))binding.tabId=-1;bindings=saved.bindings||bindings;await save()});
 setInterval(poll,700);setInterval(()=>send({type:'ping'}),20000);

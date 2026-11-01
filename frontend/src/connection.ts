@@ -5,7 +5,7 @@ export async function request<T>(path:string,body?:unknown,method?:string):Promi
  if(!response.ok){const error=await response.json().catch(()=>({error:`HTTP ${response.status}`}));throw new Error(error.detail||error.error||'本机请求失败')}
  if(response.status===204)return undefined as T;return response.json();
 }
-export function send(type:string,data:unknown={}){if(socket?.readyState!==WebSocket.OPEN)throw new Error('本地控制台尚未连接，请运行 START-STUDIO.bat。');socket.send(JSON.stringify({type,id:crypto.randomUUID(),data}))}
+export function send(type:string,data:unknown={}){if(socket?.readyState!==WebSocket.OPEN)throw new Error('本地控制台尚未连接，请先启动 NexusMCP Studio。');socket.send(JSON.stringify({type,id:crypto.randomUUID(),data}))}
 export function connect(){
  let stopped=false,attempts=0,timer:ReturnType<typeof setTimeout>|undefined,current:WebSocket|null=null;
  const start=async()=>{

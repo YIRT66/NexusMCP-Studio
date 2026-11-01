@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { linuxSystemRequest } from './linux-system.mjs';
 
 let worker;
 let sequence = 0;
@@ -15,6 +16,7 @@ export function disposeSystemReader() { shutdown(); }
 
 // 长驻 PowerShell 工作者：UIA 程序集只加载一次，保留元素引用，不必每次重新启动进程。
 export function systemRequest(action, options = {}) {
+  if (process.platform === 'linux') return linuxSystemRequest(action, options);
   if (process.platform !== 'win32') throw new Error('此工具需要 Windows；其他系统可使用 computer_info、文件及终端工具');
   if (!worker) {
     buffer = '';

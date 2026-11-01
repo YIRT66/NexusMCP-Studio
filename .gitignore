@@ -42,3 +42,5 @@ preserved-mcp/PUBLIC-MCP-URL.txt
 # Redistributable binaries: fetch/install separately rather than store huge blobs in Git
 preserved-mcp/runtime/node.exe
 preserved-mcp/bin/cloudflared.exe
+preserved-mcp/runtime/node
+preserved-mcp/bin/cloudflared

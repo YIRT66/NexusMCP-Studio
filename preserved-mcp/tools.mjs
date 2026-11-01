@@ -12,6 +12,7 @@ import { defaultShell } from './shell.mjs';
 import { authorize } from './policy.mjs';
 import { browserControl, closeBrowser } from './browser.mjs';
 import { extensionConfiguration, extensionRequest } from './extension-bridge.mjs';
+import { linuxDesktop, linuxCapabilities } from './linux-system.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const text = value => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] });
@@ -38,6 +39,7 @@ async function bridge(body) {
 }
 
 export function desktop(action, args = {}) {
+  if (process.platform === 'linux') return linuxDesktop(action, args);
   if (action === 'screenshot') return systemRequest('screenshot', args);
   if (process.platform !== 'win32') throw new Error('桌面键鼠工具需要 Windows 交互式登录会话；其他系统可使用终端与文件工具。');
   return new Promise((resolve, reject) => {
@@ -64,7 +66,7 @@ export function registerTools(server, audit = () => {}) {
       catch (error) { finish(undefined, error); audit({ tool: name, ok: false, ms: Date.now() - start }); return { ...text(error.message || String(error)), isError: true }; }
     });
   }
-  tool('computer_info', '查看电脑环境、已创建的持久终端和控制能力。电脑操作以服务当前用户权限运行。', {}, async () => text({ platform: process.platform, arch: process.arch, hostname: os.hostname(), user: os.userInfo().username, home: os.homedir(), cwd: process.cwd(), terminals: [...sessions].map(([id, s]) => ({ id, pid: s.pty.pid, shell: s.shell, exited: s.exited })), desktop: process.platform === 'win32' }), true);
+  tool('computer_info', '查看电脑环境、已创建的持久终端和控制能力。电脑操作以服务当前用户权限运行。', {}, async () => text({ platform: process.platform, arch: process.arch, hostname: os.hostname(), user: os.userInfo().username, home: os.homedir(), cwd: process.cwd(), terminals: [...sessions].map(([id, s]) => ({ id, pid: s.pty.pid, shell: s.shell, exited: s.exited })), desktop: process.platform === 'win32' || (process.platform === 'linux' && linuxCapabilities().desktop), capabilities: process.platform === 'linux' ? linuxCapabilities() : { desktop: process.platform === 'win32', accessibility: process.platform === 'win32' } }), true);
   tool('client_session','读取 NexusMCP 客户端的当前会话及待回复请求。回复用户前确认 requestId/sessionId，再用 client_reply 将正文发送到软件。无需读取网页回复。',{},async()=>text(await extensionRequest('client.context','',{})),true);
   tool('client_reply','把给用户的回复通过 MCP 直接发送到 NexusMCP 软件聊天栏。使用用户消息中的 requestId/sessionId；text 是 Markdown 正文。短回复一次 done=true；分段可 mode=append，sequence 按 1、2、3 递增防重试重复，最后 done=true。成功结果仅确认已送达。',{
     requestId:z.string().max(150).optional(),sessionId:z.string().max(150).optional(),text:z.string().max(200000).default(''),mode:z.enum(['replace','append']).default('replace'),done:z.boolean().default(true),sequence:z.number().int().positive().optional(),
@@ -138,8 +140,8 @@ export function registerTools(server, audit = () => {}) {
     else { if(!a.destination) throw new Error('需要 destination'); if(!a.overwrite) { try { await fs.access(a.destination); throw new Error('目标已存在'); } catch(e) { if(e.code!=='ENOENT') throw e; } } if(a.action==='copy') await fs.cp(a.path,a.destination,{recursive:a.recursive,force:a.overwrite,errorOnExist:!a.overwrite}); else await fs.rename(a.path,a.destination); }
     return text({ok:true});
   });
-  tool('desktop_screenshot', '截取 Windows 虚拟桌面，包含所有显示器。返回图像及坐标范围。', {}, async () => { const r = await desktop('screenshot'); return { content: [...image(r.image).content, ...text({ x: r.x, y: r.y, width: r.width, height: r.height }).content] }; }, true);
-  tool('desktop_action', '控制 Windows 键鼠、窗口和剪贴板。click/move/scroll 使用绝对屏幕坐标；keys 使用 SendKeys 格式，如 ^l、{ENTER}、%{TAB}；type 输入 Unicode 文本。focus 使用窗口句柄。', {
+  tool('desktop_screenshot', '截取 Windows 虚拟桌面或 Linux X11 桌面。返回图像及坐标范围。Linux 需要 ImageMagick；Wayland/无桌面会话不支持。', {}, async () => { const r = await desktop('screenshot'); return { content: [...image(r.image).content, ...text({ x: r.x, y: r.y, width: r.width, height: r.height }).content] }; }, true);
+  tool('desktop_action', '控制 Windows 或 Linux X11 的键鼠、窗口和剪贴板。click/move/scroll 使用绝对屏幕坐标；Windows keys 使用 SendKeys（^l、{ENTER}），Linux keys 使用 xdotool 键名（ctrl+l、Return、alt+Tab）。type 输入 Unicode 文本。Linux 需要 xdotool、wmctrl、xclip；Wayland 暂不支持。', {
     action: z.enum(['click', 'double_click', 'right_click', 'move', 'scroll', 'keys', 'type', 'windows', 'focus', 'clipboard_read', 'clipboard_write']),
     x: z.number().int().optional(), y: z.number().int().optional(), text: z.string().max(100000).optional(), delta: z.number().int().min(-12000).max(12000).optional(), handle: z.string().optional(),
   }, async a => text(await desktop(a.action, a)));

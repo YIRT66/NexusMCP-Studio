@@ -9,10 +9,11 @@ import {StdioClientTransport} from '../preserved-mcp/node_modules/@modelcontextp
 import {StreamableHTTPClientTransport} from '../preserved-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js';
 import {SSEClientTransport} from '../preserved-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/sse.js';
 import {ToolListChangedNotificationSchema} from '../preserved-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/types.js';
+import platform from '../preserved-mcp/platform.cjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const engine=path.join(root,'preserved-mcp');
 const require=createRequire(path.join(engine,'package.json'));
-const node=process.platform==='win32'?path.join(engine,'runtime/node.exe'):process.execPath;
+const node=platform.runtimePaths(engine).node;
 const hash=value=>createHash('sha256').update(value).digest('hex').slice(0,8);
 const clean=value=>String(value||'').replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi,'$1[凭据已隐藏]@').replace(/([?&](?:token|key|secret|password)=)[^&#\s]+/gi,'$1[已隐藏]').slice(-4000);
 function within(base,relative){const target=path.resolve(base,relative);const rel=path.relative(base,target);if(rel.startsWith('..')||path.isAbsolute(rel))throw new Error('安装路径超出扩展目录');return target}
@@ -78,7 +79,7 @@ export class ExtensionManager{
      let transport;
      if(config.url)transport=new StreamableHTTPClientTransport(new URL(config.url),{requestInit:{headers:config.headers||{}}});
      else{
-      const substitute=value=>String(value).replaceAll('${PLUGIN_DIR}',base).replaceAll('${NODE}',node).replaceAll('${PYTHON}',entry.pythonPath||'python.exe');
+      const substitute=value=>String(value).replaceAll('${PLUGIN_DIR}',base).replaceAll('${NODE}',node).replaceAll('${PYTHON}',entry.pythonPath||(process.platform==='win32'?'python.exe':'python3'));
       let command=substitute(config.command);let args=(config.args||[]).map(substitute);
       if(['node','node.exe'].includes(command.toLowerCase()))command=node;
       else if(['npx','npx.cmd'].includes(command.toLowerCase())){command=node;args=[path.join(engine,'node_modules/npm/bin/npm-cli.js'),'--ignore-scripts','exec','--yes','--',...args]}

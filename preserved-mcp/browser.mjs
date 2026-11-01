@@ -19,6 +19,7 @@ async function launch() {
     const executablePath = process.env.NEXUS_BROWSER_PATH || [
       path.join(process.env['ProgramFiles(x86)'] || 'C:/Program Files (x86)', 'Microsoft/Edge/Application/msedge.exe'),
       path.join(process.env.ProgramFiles || 'C:/Program Files', 'Google/Chrome/Application/chrome.exe'),
+      ...(process.platform === 'linux' ? ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/microsoft-edge', '/opt/google/chrome/chrome', '/snap/bin/chromium', chromium.executablePath()] : []),
     ].find(p => existsSync(p));
     if (!executablePath && process.platform === 'win32') throw new Error('未找到 Edge 或 Chrome，请安装浏览器或设置 NEXUS_BROWSER_PATH');
     context = await chromium.launchPersistentContext(profile, { executablePath, channel: executablePath ? undefined : 'chrome', headless: process.env.NEXUS_BROWSER_HEADLESS === '1', viewport: null, args: ['--no-first-run', '--no-default-browser-check'] });
