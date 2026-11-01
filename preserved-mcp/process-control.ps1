@@ -65,7 +65,7 @@ try {
    if(-not [NexusProcess]::IsWow64Process($handle,[ref]$targetWow)) { Native-Error '无法读取目标进程架构' }
    [void][NexusProcess]::IsWow64Process([Diagnostics.Process]::GetCurrentProcess().Handle,[ref]$currentWow)
    if($targetWow -ne $currentWow) { throw '仅支持与当前服务相同位数的目标进程' }
-   $machine=[ushort]0;$native=[ushort]0;$selfMachine=[ushort]0;$selfNative=[ushort]0
+   $machine=[UInt16]0;$native=[UInt16]0;$selfMachine=[UInt16]0;$selfNative=[UInt16]0
    if(-not [NexusProcess]::IsWow64Process2($handle,[ref]$machine,[ref]$native)) { Native-Error '无法读取目标架构' }
    if(-not [NexusProcess]::IsWow64Process2([Diagnostics.Process]::GetCurrentProcess().Handle,[ref]$selfMachine,[ref]$selfNative)) { Native-Error '无法读取服务架构' }
    if($machine -eq 0){$machine=$native};if($selfMachine -eq 0){$selfMachine=$selfNative}
