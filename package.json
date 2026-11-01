@@ -25,7 +25,7 @@
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
     "pack:linux": "npm run typecheck && npm run build && npm run build:service && electron-builder --dir --linux --x64 --publish=never",
     "dist:linux": "npm run typecheck && npm run build && npm run build:service && electron-builder --linux AppImage deb --x64 --publish=never",
-    "test": "node --test runtime/*.test.mjs",
+    "test": "node --test --test-concurrency=1 runtime/*.test.mjs",
     "test:mcp": "npm --prefix preserved-mcp test",
     "build:browser-extension": "node scripts/package-browser-extension.mjs"
   },
