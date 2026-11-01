@@ -1,0 +1,59 @@
+.conversation-workbench.webchat-layout{flex-direction:row;gap:0}.webchat-conversation{display:flex;flex-direction:column;min-width:0;min-height:0;flex:1;height:100%}.webchat-conversation .session-body{min-height:0}.webchat-browser-button{display:inline-flex;align-items:center;gap:6px;font-size:11px;white-space:nowrap}.webchat-status{font-size:10px;color:var(--muted);max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ai-browser-panel{width:45%;min-width:340px;max-width:760px;border-left:1px solid var(--border);height:100%;display:flex;flex-direction:column;background:var(--panel);position:relative;min-height:0}.ai-browser-panel header{height:45px;flex:none;display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border)}.ai-browser-panel header select{flex:1;min-width:0;font-size:12px;background:var(--panel)}.ai-browser-panel header button{padding:5px;display:flex;border-radius:4px}.ai-browser-panel form{padding:6px 10px;border-bottom:1px solid var(--border);flex:none}.ai-browser-panel form input{width:100%;border:1px solid var(--border);border-radius:5px;font-size:11px;padding:6px 9px;background:var(--elevated)}.ai-browser-canvas{flex:1;min-height:1px;display:flex;align-items:center;justify-content:center;overflow:hidden}.ai-browser-canvas>span{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);padding:20px;text-align:center;line-height:1.8}.ai-browser-panel footer{font-size:10px;color:var(--muted);padding:8px 10px;flex:none;border-top:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ai-browser-error{padding:10px;font-size:12px;color:#c98585;line-height:1.7;overflow-wrap:anywhere}.ai-browser-error button{margin-left:10px;text-decoration:underline}.webchat-layout .session-header-actions{gap:5px}.webchat-layout .session-header-actions .workspace-select{display:none}.webchat-layout .session-title-row h1{max-width:140px}.webchat-layout .conversation-content,.webchat-layout .session-composer-wrap{width:100%;max-width:780px}.webchat-site-note{display:flex;gap:6px;align-items:center;padding:6px 0;color:var(--muted);font-size:11px}.webchat-site-note button{text-decoration:underline;padding:2px 4px}
+@media(max-width:1100px){.ai-browser-panel{position:absolute;inset:0 0 0 auto;width:70%;max-width:none;z-index:12;box-shadow:-20px 0 50px #0003}.webchat-layout .webchat-conversation{width:100%}.webchat-status{max-width:140px}}@media(max-width:650px){.ai-browser-panel{width:100%;min-width:0}.webchat-browser-button span{display:none}}
+.session-header-actions>.webchat-browser-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;width:auto;height:28px;padding:4px 7px;white-space:nowrap;line-height:1}
+.ai-browser-panel{overflow:hidden;will-change:auto}
+.ai-browser-panel header,.ai-browser-panel form,.ai-browser-panel footer{min-width:0}
+.ai-browser-panel header>button{flex:none}
+
+.conversation-workbench .session-header-actions>button.webchat-browser-button{display:inline-flex;width:auto;height:28px;padding:4px 8px;align-items:center;justify-content:center;gap:6px;flex:none}.webchat-layout .session-title-row>.session-mode{display:none}
+
+.browser-extension-guide{max-width:470px;padding:26px;font-size:12px;line-height:1.9;overflow:auto;max-height:100%}.browser-extension-guide h2{font-size:18px;font-weight:500;margin-bottom:14px}.browser-extension-guide p{color:var(--muted);margin:12px 0}.browser-extension-guide ol{padding-left:19px}.browser-extension-guide li{margin:18px 0}.browser-extension-guide button{display:inline-flex;gap:5px;align-items:center;text-decoration:underline;text-underline-offset:3px}.ai-browser-panel header select:first-of-type{max-width:155px}.ai-browser-panel header select{font-size:11px}
+/* 浏览器扩展与当前聊天的连接状态。 */
+.session-browser-link{display:flex;align-items:center;gap:7px;min-width:0;min-height:26px;padding-top:7px;font-size:11px;color:var(--muted)}
+.session-browser-link>i{width:5px;height:5px;border-radius:50%;background:var(--faint);flex:none;transition:background .18s ease}
+.session-browser-link>i.online{background:#8db89a}
+.session-browser-link>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.session-browser-link>button{display:inline-flex;align-items:center;gap:5px;margin-left:auto;padding:3px 0 3px 8px;color:var(--text);font-size:11px;white-space:nowrap;flex:none;text-underline-offset:3px}
+.session-browser-link>button:hover:not(:disabled){text-decoration:underline}
+.session-browser-link>button:disabled{opacity:.5;cursor:wait}
+.session-composer-status>span:first-child{min-width:0;overflow-wrap:anywhere;line-height:1.7}
+.ai-browser-panel .ai-browser-header{gap:5px;padding:7px 10px}
+.ai-browser-header>.ui-select-trigger{display:inline-flex;align-items:center;gap:6px;min-width:0;font-size:11px;height:29px;padding:5px;border-radius:6px;flex-shrink:1;background:transparent}
+.ai-browser-header>.ui-select-trigger:hover:not(:disabled){background:var(--elevated)}
+.ai-browser-header>.browser-mode-select{max-width:190px;flex:1.25}
+.ai-browser-header>.browser-provider-select{flex:1;max-width:155px}
+.ai-browser-header>.ui-select-trigger>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ai-browser-header>.ui-select-trigger>svg{flex:none}
+.ai-browser-header>button:last-child{margin-left:auto}
+.browser-extension-body{width:100%;height:100%;overflow:auto;display:flex}
+.browser-extension-content{width:100%;max-width:500px;padding:34px 32px;margin:auto;color:var(--text);animation:browser-link-appear .2s ease-out}
+.browser-current-ai{display:flex;align-items:center;gap:11px;margin-bottom:25px;font-size:13px}
+.browser-current-ai>span{display:flex;flex-direction:column;min-width:0;gap:4px}
+.browser-current-ai small{color:var(--muted);font-size:11px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;max-width:260px}
+.browser-extension-content h2{font-size:21px;font-weight:550;line-height:1.45;margin:0 0 10px;letter-spacing:-.3px}
+.browser-link-description{color:var(--muted);font-size:12px;line-height:1.8;margin:0 0 21px}
+.browser-link-stages{list-style:none;margin:0;padding:0;border-block:1px solid var(--border)}
+.browser-link-stages li{display:flex;align-items:center;gap:11px;padding:12px 0;color:var(--muted)}
+.browser-link-stages li+li{border-top:1px solid var(--border)}
+.browser-link-stages li>span{display:grid;place-items:center;flex:none;width:22px;height:22px;border:1px solid var(--border);border-radius:50%}
+.browser-link-stages li[data-complete=true]>span{color:#95bca0}
+.browser-link-stages li>div{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:1;min-width:0;font-size:12px;color:var(--text)}
+.browser-link-stages small{font-size:11px;text-align:right;color:var(--muted)}
+.browser-bound-url{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:10px 0 0;user-select:text}
+.browser-link-primary-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:21px}
+.browser-link-primary-actions button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:35px;border-radius:8px;font-size:12px;padding:8px 13px;transition:background .15s ease,opacity .15s ease,transform .15s ease}
+.browser-link-primary-actions .browser-link-primary{background:var(--text);color:var(--panel)}
+.browser-link-primary:hover:not(:disabled){opacity:.88}
+.browser-link-primary:active:not(:disabled){transform:scale(.98)}
+.browser-link-primary:disabled{opacity:.4;cursor:wait}
+.browser-link-primary-actions .browser-link-secondary{color:var(--text);border:1px solid var(--border)}
+.browser-link-secondary:hover{background:var(--elevated)}
+.browser-extension-setup{margin-top:25px;font-size:11px;line-height:1.9;color:var(--muted)}
+.browser-extension-setup>summary{cursor:pointer;color:var(--text);padding:5px 0;width:fit-content}
+.browser-extension-setup ol{padding-left:17px;margin:10px 0}
+.browser-extension-setup li{padding:4px 0}
+.browser-extension-setup button{display:inline-flex;gap:4px;align-items:center;color:var(--text);text-decoration:underline;text-underline-offset:3px;font-size:inherit}
+.browser-extension-setup p{margin:12px 0 0}
+@keyframes browser-link-appear{from{opacity:.4;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:760px){.browser-extension-content{padding:24px}.browser-extension-content h2{font-size:19px}}
+@media(prefers-reduced-motion:reduce){.browser-extension-content{animation:none}.browser-link-primary-actions button,.session-browser-link>i{transition:none}}

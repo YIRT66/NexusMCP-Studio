@@ -36,9 +36,9 @@
 **/.npmrc
 
 # Runtime-specific private state
-NexusMCP-Studio/preserved-mcp/data/
-NexusMCP-Studio/preserved-mcp/PUBLIC-MCP-URL.txt
+preserved-mcp/data/
+preserved-mcp/PUBLIC-MCP-URL.txt
 
 # Redistributable binaries: fetch/install separately rather than store huge blobs in Git
-NexusMCP-Studio/preserved-mcp/runtime/node.exe
-NexusMCP-Studio/preserved-mcp/bin/cloudflared.exe
+preserved-mcp/runtime/node.exe
+preserved-mcp/bin/cloudflared.exe

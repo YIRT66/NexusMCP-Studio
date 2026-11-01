@@ -1,0 +1,44 @@
+{
+  "name": "nexusmcp-studio",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "overrides": {
+    "motion-dom": "12.23.23",
+    "motion-utils": "12.23.6"
+  },
+  "scripts": {
+    "dev": "node scripts/desktop.mjs --dev",
+    "build": "npm --workspace frontend run build",
+    "typecheck": "npm --workspace frontend run typecheck",
+    "preview": "npm --workspace frontend run preview",
+    "mcp:start": "node preserved-mcp/server.mjs",
+    "start": "node scripts/desktop.mjs",
+    "dev:web": "npm --workspace frontend run dev",
+    "postinstall": "node node_modules/electron/install.js",
+    "build:service": "node scripts/package-service.mjs",
+    "pack:desktop": "npm run typecheck && npm run build && npm run build:service && electron-builder --dir --win --x64",
+    "dist": "npm run typecheck && npm run build && npm run build:service && electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "express": "5.1.0",
+    "motion-dom": "12.23.23",
+    "motion-utils": "12.23.6",
+    "playwright-core": "1.58.2",
+    "ws": "8.18.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/ws": "^8.18.1",
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  },
+  "main": "desktop/main.cjs",
+  "description": "NexusMCP Studio 独立桌面客户端",
+  "author": "NexusMCP Studio",
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

@@ -1,0 +1,14 @@
+import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {promises as fs} from 'node:fs';
+test('扩展按客户端会话复用网页，切换旧会话恢复原标签',async()=>{
+ const tabs=new Map();let created=0;const storage={};const snapshots=new Map();const sent=[];
+ const chrome={storage:{local:{get:async()=>storage,set:async value=>Object.assign(storage,structuredClone(value))}},tabs:{query:async()=>[...tabs.values()],get:async id=>{if(!tabs.has(id))throw new Error('标签关闭');return tabs.get(id)},create:async options=>{const page={id:++created,url:options.url,windowId:1};tabs.set(page.id,page);snapshots.set(page.id,{ready:true,busy:false,input:'',reply:'',replyCount:0,messages:[],historyAvailable:true,url:page.url});return page},update:async()=>{},onUpdated:{addListener:()=>{}},sendMessage:async(id,message)=>{const snap=snapshots.get(id);const request=message.data;if(request.operation==='send'){sent.push({id,text:request.text});const index=snap.messages.filter(m=>m.role==='user').length;snap.messages.push({role:'user',index,content:request.text},{role:'assistant',index,content:'回复：'+request.text});snap.reply='回复：'+request.text;snap.replyCount++;return {ok:true,value:{dispatched:true}}}return {ok:true,value:structuredClone(snap)}}},windows:{update:async()=>{}},runtime:{onMessage:{addListener:()=>{}},onStartup:{addListener:()=>{}}}};
+ const context=vm.createContext({chrome,console,WebSocket:class{static OPEN=1},setTimeout:()=>0,clearTimeout:()=>{},setInterval:()=>0,Date,JSON});vm.runInContext(await fs.readFile(new URL('../browser-plugin/background.js',import.meta.url),'utf8'),context);await new Promise(r=>setTimeout(r,10));vm.runInContext('socket={readyState:1,send:()=>{}}',context);
+ const command=(operation,data)=>vm.runInContext('command('+JSON.stringify(operation)+','+JSON.stringify(data)+')',context);
+ await command('open',{provider:'chatgpt',sessionId:'A'});
+ for(const text of ['第一条','第二条']){await command('send',{text,sessionId:'A'});await vm.runInContext('poll()',context);vm.runInContext('job.changed-=4000',context);await vm.runInContext('poll()',context)}
+ assert.equal(created,1);assert.equal(sent.length,2);assert.equal(sent[0].id,sent[1].id);
+ await command('open',{provider:'chatgpt',sessionId:'A'});assert.equal(created,1);
+ await command('activate',{sessionId:'B'});await command('open',{provider:'chatgpt',sessionId:'B'});assert.equal(created,2);
+ await command('activate',{sessionId:'A'});await command('open',{provider:'chatgpt',sessionId:'A'});assert.equal(created,2);assert.equal(storage.bindings['chatgpt:A'].tabId,1);assert.equal(storage.bindings['chatgpt:B'].tabId,2);
+ console.log('两条消息复用同一标签，新建客户端会话才新建网页标签，切回旧会话恢复原标签：通过');
+});

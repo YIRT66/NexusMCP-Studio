@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark light">
+<title>NexusMCP 浏览器扩展</title>
+<style>
+:root{--bg:#1c1c1e;--panel:#2c2c2e;--text:#ededee;--muted:#a3a3a8;--line:#ffffff16;--good:#94bda0;--error:#ef9b9b;color-scheme:dark}
+*{box-sizing:border-box;scrollbar-width:none}*::-webkit-scrollbar{display:none}
+body{width:360px;max-height:600px;overflow:auto;margin:0;padding:20px;font:12px/1.65 system-ui,"Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
+header{display:flex;align-items:center;gap:10px;margin-bottom:20px}header>span{font-size:25px;line-height:1}header strong{font-size:15px}header small{display:block;color:var(--muted);font-size:11px}
+h2{font-size:12px;font-weight:550;margin:0 0 10px}p{margin:8px 0;color:var(--muted)}
+label{display:block;font-size:11px;color:var(--muted);margin-bottom:6px}
+input,textarea{font:inherit;box-sizing:border-box;width:100%;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px;outline:none}
+input{font-size:11px}textarea{height:82px;resize:vertical;min-height:70px;max-height:180px}
+input:focus,textarea:focus{border-color:var(--muted)}button{display:inline-flex;align-items:center;justify-content:center;min-height:33px;padding:7px 13px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--text);font:inherit;cursor:pointer;transition:opacity .15s,transform .15s,background .15s}
+button:hover:not(:disabled){background:#38383b}button:active:not(:disabled){transform:scale(.98)}button:disabled{opacity:.4;cursor:default}button:focus-visible,summary:focus-visible{outline:2px solid var(--muted);outline-offset:3px}
+.primary{background:var(--text);color:var(--bg);border-color:transparent}.primary:hover:not(:disabled){background:var(--text);opacity:.85}
+.connect-actions{display:flex;align-items:center;gap:12px;margin-top:9px}#connection{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}#connection::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--muted)}#connection[data-connected=true]::before{background:var(--good)}
+.binding{margin-top:18px;padding:13px 0;border-block:1px solid var(--line)}.binding>div{display:flex;justify-content:space-between;align-items:center;gap:10px}.binding strong{font-size:12px;font-weight:500}#provider{font-size:11px;color:var(--muted)}#binding{font-size:11px;margin-bottom:0;line-height:1.8}
+#notice{color:var(--error);font-size:11px;overflow-wrap:anywhere}#notice:empty{display:none}
+details{margin-top:15px}summary{cursor:pointer;font-weight:500;padding:4px 0;width:fit-content}.hint{font-size:11px;line-height:1.8;margin-bottom:12px}.page-actions{display:flex;gap:8px;margin-top:8px}#state{color:var(--muted);font-size:11px;margin:8px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:150px;overflow:auto;font:11px/1.7 system-ui;color:var(--muted);margin:10px 0 0}pre:empty{display:none}
+@media(prefers-color-scheme:light){:root{--bg:#fff;--panel:#f3f3f5;--text:#252527;--muted:#69696f;--line:#00000016;--good:#438157;--error:#ad3535;color-scheme:light}button:hover:not(:disabled){background:#e8e8ec}.primary:hover:not(:disabled){background:var(--text)}}
+@media(prefers-reduced-motion:reduce){button{transition:none}}
+</style>
+</head>
+<body>
+<header><span aria-hidden="true">⌘</span><div><strong>NexusMCP</strong><small>浏览器扩展</small></div></header>
+<form id="connection-form">
+<label for="endpoint">软件提供的扩展连接地址</label>
+<input id="endpoint" placeholder="ws://127.0.0.1:…/webchat/extension/…" spellcheck="false" autocomplete="off">
+<div class="connect-actions"><button class="primary" id="connect" type="submit">连接软件</button><span id="connection" role="status">正在检查连接…</span></div>
+</form>
+<section class="binding" aria-label="软件当前聊天">
+<div><strong>软件当前聊天</strong><span id="provider"></span></div>
+<p id="binding">连接软件后，可查看聊天的网页绑定状态。</p>
+</section>
+<p id="notice" role="alert"></p>
+<details>
+<summary>直接操作当前网页</summary>
+<p class="hint">这里的消息直接发到当前浏览器标签页。要在软件里聊天，请先在软件中点击“为当前聊天打开网页”。</p>
+<label for="text">发送到当前标签页</label>
+<textarea id="text" placeholder="输入消息…"></textarea>
+<div class="page-actions"><button id="send" type="button" disabled>发送到当前网页</button><button id="stop" type="button" disabled>停止生成</button></div>
+<div id="state" role="status">正在检查当前网页…</div>
+<pre id="reply" aria-label="网页最新回复"></pre>
+</details>
+<script src="popup.js"></script>
+</body>
+</html>

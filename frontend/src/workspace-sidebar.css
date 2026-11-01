@@ -1,0 +1,36 @@
+.workspace-group{margin:0 0 12px}
+.workspace-group-header{display:flex;align-items:center;border-radius:8px;gap:2px;min-height:34px}
+.workspace-group-header:hover,.workspace-group-header:focus-within{background:var(--soft)}
+.shell-sidebar .session-list .workspace-group-toggle{min-width:0;flex:1;width:auto;padding:7px 7px;gap:7px;color:var(--muted);background:transparent;font-size:12px}
+.workspace-group.current .workspace-group-toggle{color:var(--text)}
+.workspace-group-toggle>svg{flex:none;transition:transform .2s cubic-bezier(.22,1,.36,1)}
+.workspace-group-toggle>svg.open{transform:rotate(90deg)}
+.workspace-group-actions{display:flex;flex:none;gap:1px;padding-right:5px;opacity:0;transition:opacity .15s}
+.workspace-group.current .workspace-group-actions,.workspace-group-header:hover .workspace-group-actions,.workspace-group-header:focus-within .workspace-group-actions{opacity:1}
+.shell-sidebar .session-list .workspace-group-actions>button{padding:5px;width:26px;min-height:26px;display:grid;place-items:center;border-radius:5px;color:var(--muted)}
+.workspace-session-list{overflow:hidden}
+.shell-sidebar .session-list .workspace-session-button{padding:8px 9px 8px 26px;gap:8px;min-height:33px}
+.workspace-session-button>time{font-size:10px;color:var(--muted);white-space:nowrap;flex:none}
+.workspace-session-row{position:relative;display:flex;border-radius:8px;overflow:hidden}
+.workspace-session-row.active{background:var(--elevated)}
+.workspace-session-row:hover:not(.active){background:var(--soft)}
+.shell-sidebar .session-list .workspace-session-row>.workspace-session-button{flex:1;width:100%;background:transparent;min-width:0}
+.shell-sidebar .session-list .workspace-chat-menu{position:absolute;right:5px;top:4px;display:grid;place-items:center;width:25px;min-height:25px;height:25px;padding:4px;border-radius:5px;color:var(--muted);opacity:0;pointer-events:none;transition:opacity .14s,background .14s}
+.workspace-session-row:hover>.workspace-chat-menu,.workspace-session-row:focus-within>.workspace-chat-menu,.workspace-session-row.menu-open>.workspace-chat-menu{opacity:1;pointer-events:auto}
+.workspace-session-row:hover time,.workspace-session-row:focus-within time,.workspace-session-row.menu-open time{opacity:0}
+.shell-sidebar .session-list .workspace-expand-sessions{padding:7px 9px 7px 26px;font-size:11px;color:var(--muted)}
+.workspace-no-sessions{padding:10px 12px 10px 26px!important;font-size:11px;color:var(--muted);line-height:1.7}
+.workspace-context-menu{position:fixed;z-index:65;width:164px;padding:6px;background:#2c2c2e;color:var(--text);border:1px solid #ffffff0d;box-shadow:0 8px 28px #0002;border-radius:13px}
+.workspace-context-menu>button{display:flex;align-items:center;gap:8px;width:100%;padding:9px 8px;min-height:33px;font-size:12px;border-radius:7px;text-align:left;outline:none}
+.workspace-context-menu>button:focus-visible,.workspace-context-menu>button:hover{background:#ffffff09}
+.workspace-context-menu>button.danger{color:#ed7676}
+.workspace-name-field{display:flex;flex-direction:column;gap:10px;color:var(--text);font-size:12px}
+.workspace-name-field>input{border:1px solid var(--dialog-line);background:var(--dialog-control);color:var(--text);border-radius:8px;padding:10px 12px;font-size:13px;width:100%;outline:0}
+.workspace-name-field>input:focus{border-color:var(--dialog-muted)}
+.workspace-delete-confirm{padding:9px 13px;border-radius:9px;background:#bd4848;color:#fff;font-size:12px;min-height:35px}
+.workspace-delete-confirm:hover{background:#ac3f3f}
+:root[data-theme=light] .workspace-context-menu{background:#fff;border-color:#0001}
+:root[data-theme=light] .workspace-context-menu>button:focus-visible,:root[data-theme=light] .workspace-context-menu>button:hover{background:#00000006}
+:root[data-theme=light] .workspace-context-menu>button.danger{color:#b73333}
+@media(max-width:560px){.workspace-group-actions{display:none}}
+@media(prefers-reduced-motion:reduce){.workspace-group-toggle>svg,.workspace-group-actions{transition:none}}
