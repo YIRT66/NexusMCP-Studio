@@ -44,14 +44,14 @@ try {
    if([string]$a.address -notmatch '^0x[0-9a-fA-F]+$') { throw '地址需为 0x 开头的十六进制字符串' }
    $address=[Convert]::ToUInt64(([string]$a.address).Substring(2),16)
    $buffer=New-Object byte[] ([int]$a.bytes);$read=[UIntPtr]::Zero
-   if(-not [NexusProcess]::ReadProcessMemory($handle,[IntPtr]([long]$address),$buffer,[UIntPtr]$buffer.Length,[ref]$read)) { Native-Error '无法读取指定内存范围' }
+   if(-not [NexusProcess]::ReadProcessMemory($handle,[IntPtr]([long]$address),$buffer,[UIntPtr]([UInt64]$buffer.Length),[ref]$read)) { Native-Error '无法读取指定内存范围' }
    $data=New-Object byte[] ([int]$read.ToUInt64());[Array]::Copy($buffer,$data,$data.Length)
    $result=@{pid=$process.Id;startIdentity=$identity;address=$a.address;bytesRead=$data.Length;hex=([BitConverter]::ToString($data)).Replace('-','').ToLowerInvariant();base64=[Convert]::ToBase64String($data);utf8=[Text.Encoding]::UTF8.GetString($data)}
   } elseif($a.action -eq 'memory' -and $a.section -eq 'regions') {
    $items=New-Object Collections.Generic.List[object];$address=[long]0;$visited=0
    while($visited -lt 32768) {
     $region=New-Object NexusProcess+MBI
-    $size=[NexusProcess]::VirtualQueryEx($handle,[IntPtr]$address,[ref]$region,[UIntPtr][Runtime.InteropServices.Marshal]::SizeOf($region))
+    $size=[NexusProcess]::VirtualQueryEx($handle,[IntPtr]$address,[ref]$region,[UIntPtr]([UInt64][Runtime.InteropServices.Marshal]::SizeOf($region)))
     if($size -eq [UIntPtr]::Zero) { break };$visited++
     $length=[long]$region.RegionSize.ToUInt64();if($length -le 0) { break }
     if($region.State -ne 0x10000) { $item=@{start=('0x{0:x}' -f $region.BaseAddress.ToInt64());sizeBytes=$length;state=$region.State;protection=$region.Protect;type=$region.Type};if(-not $a.query -or ($item|ConvertTo-Json -Compress).Contains([string]$a.query)){$items.Add($item)} }
@@ -80,11 +80,11 @@ try {
     $remoteModule=@($process.Modules | Where-Object {$_.ModuleName -eq $localModule.ModuleName})[0]
     if(-not $remoteModule) { throw '无法解析目标进程中的动态库加载器地址' }
     $remoteLoader=[IntPtr]($remoteModule.BaseAddress.ToInt64()+$loader.ToInt64()-$localModule.BaseAddress.ToInt64())
-    $bytes=[Text.Encoding]::Unicode.GetBytes($library+[char]0);$remote=[NexusProcess]::VirtualAllocEx($handle,[IntPtr]::Zero,[UIntPtr]$bytes.Length,0x3000,4)
+    $bytes=[Text.Encoding]::Unicode.GetBytes($library+[char]0);$remote=[NexusProcess]::VirtualAllocEx($handle,[IntPtr]::Zero,[UIntPtr]([UInt64]$bytes.Length),0x3000,4)
     if($remote -eq [IntPtr]::Zero) { Native-Error '无法分配动态库路径缓冲区' }
     $thread=[IntPtr]::Zero;$release=$true
     try {
-     $written=[UIntPtr]::Zero;if(-not [NexusProcess]::WriteProcessMemory($handle,$remote,$bytes,[UIntPtr]$bytes.Length,[ref]$written) -or $written.ToUInt64() -ne $bytes.Length) { Native-Error '无法写入动态库路径' }
+     $written=[UIntPtr]::Zero;if(-not [NexusProcess]::WriteProcessMemory($handle,$remote,$bytes,[UIntPtr]([UInt64]$bytes.Length),[ref]$written) -or $written.ToUInt64() -ne $bytes.Length) { Native-Error '无法写入动态库路径' }
      $id=[uint32]0;$thread=[NexusProcess]::CreateRemoteThread($handle,[IntPtr]::Zero,[UIntPtr]::Zero,$remoteLoader,$remote,0,[ref]$id)
      if($thread -eq [IntPtr]::Zero) { Native-Error '无法创建动态库加载线程' }
      $wait=[NexusProcess]::WaitForSingleObject($thread,10000)
