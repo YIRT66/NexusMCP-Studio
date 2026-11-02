@@ -1,0 +1,43 @@
+name: Build and publish version
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  linux:
+    uses: ./.github/workflows/linux.yml
+  windows:
+    uses: ./.github/workflows/windows-exe.yml
+  publish:
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: NexusMCP-Studio-*
+          path: dist
+          merge-multiple: true
+      - name: Publish verified packages and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="v$(node -p 'require("./package.json").version')"
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "$version" ]]; then
+            echo 'Tag and package version differ' >&2
+            exit 1
+          fi
+          mapfile -d '' files < <(find dist -maxdepth 1 -type f \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.tar.gz' -o -name '*.zip' \) -print0)
+          test "${#files[@]}" -ge 5
+          (cd dist && sha256sum *.exe *.AppImage *.deb *.tar.gz *.zip > SHA256SUMS.txt)
+          gh release create "$version" "${files[@]}" dist/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "NexusMCP Studio ${version#v}" \
+            --notes-file "docs/releases/${version#v}.md"

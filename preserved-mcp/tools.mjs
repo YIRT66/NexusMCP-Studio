@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { systemRequest, disposeSystemReader } from './system-reader.mjs';
 import { startActivity } from './activity.mjs';
 import { defaultShell } from './shell.mjs';
+import { readText, readWhole, readMany, writeText, patchText, fileHash } from './files.mjs';
 import { authorize,callContext } from './policy.mjs';
 import { browserControl, closeBrowser } from './browser.mjs';
 import { extensionConfiguration, extensionRequest } from './extension-bridge.mjs';
@@ -25,6 +26,7 @@ export function revokeSharedAccess(accessId){for(const [id,session] of sessions)
 export async function disposeTools() { for (const s of sessions.values()) { try { s.pty.kill(); } catch {} } sessions.clear(); for(const c of desktopChildren) c.kill(); desktopChildren.clear(); disposeSystemReader(); await closeBrowser(); }
 
 async function bridge(body) {
+  if(process.env.NEXUS_PRIVILEGED_HOST==='1')return extensionRequest('browser.control','',body);
   if (process.env.NEXUS_STANDALONE !== '0') return browserControl(body);
   const descriptor = process.env.HANCODE_BRIDGE_FILE || path.join(process.env.LOCALAPPDATA || os.homedir(), 'HanCodeControl', 'bridge.json');
   let config;
@@ -68,7 +70,7 @@ export function registerTools(server, audit = () => {}) {
       catch (error) { finish(undefined, error); audit({ tool: name, ok: false, ms: Date.now() - start }); return { ...text(error.message || String(error)), isError: true }; }
     });
   }
-  tool('computer_info', '查看电脑环境、已创建的持久终端和控制能力。电脑操作以服务当前用户权限运行。', {}, async () => text({ platform: process.platform, arch: process.arch, hostname: os.hostname(), user: os.userInfo().username, home: os.homedir(), cwd: process.cwd(), terminals: [...sessions].map(([id, s]) => ({ id, pid: s.pty.pid, shell: s.shell, exited: s.exited })), desktop: process.platform === 'win32' || (process.platform === 'linux' && linuxCapabilities().desktop), capabilities: process.platform === 'linux' ? linuxCapabilities() : { desktop: process.platform === 'win32', accessibility: process.platform === 'win32' } }), true);
+  tool('computer_info', '查看电脑环境、已创建的持久终端和控制能力。电脑操作以服务当前用户权限运行。', {}, async () => text({ platform: process.platform, arch: process.arch, hostname: os.hostname(), user: os.userInfo().username, home: os.homedir(), cwd: process.cwd(), terminals: [...sessions].map(([id, s]) => ({ id, pid: s.pty.pid, shell: s.shell, cwd:s.cwd, cols:s.cols, rows:s.rows, exited: s.exited, exitCode:s.exitCode })), desktop: process.platform === 'win32' || (process.platform === 'linux' && linuxCapabilities().desktop), capabilities: process.platform === 'linux' ? linuxCapabilities() : { desktop: process.platform === 'win32', accessibility: process.platform === 'win32' } }), true);
   tool('client_session','读取 NexusMCP 客户端的当前会话及待回复请求。回复用户前确认 requestId/sessionId，再用 client_reply 将正文发送到软件。无需读取网页回复。',{},async()=>text(await extensionRequest('client.context','',{})),true);
   tool('client_reply','把给用户的回复通过 MCP 直接发送到 NexusMCP 软件聊天栏。使用用户消息中的 requestId/sessionId；text 是 Markdown 正文。短回复一次 done=true；分段可 mode=append，sequence 按 1、2、3 递增防重试重复，最后 done=true。成功结果仅确认已送达。',{
     requestId:z.string().max(150).optional(),sessionId:z.string().max(150).optional(),text:z.string().max(200000).default(''),mode:z.enum(['replace','append']).default('replace'),done:z.boolean().default(true),sequence:z.number().int().positive().optional(),
@@ -111,34 +113,35 @@ export function registerTools(server, audit = () => {}) {
     const shell = a.shell || defaultShell();
     const child = pty.spawn(shell, a.args || (process.platform === 'win32' && !a.shell ? ['-NoLogo', '-NoProfile'] : []), { name: 'xterm-256color', cols: a.cols, rows: a.rows, cwd: a.cwd || os.homedir(), env: { ...process.env, ...a.env }, useConpty: true });
     const id = randomUUID();
-    const session = { sharedAccessId:callContext().sharedAccessId, pty: child, shell, output: '', offset: 0, exited: false };
-    child.onData(data => { session.output += data; if (session.output.length > 1_000_000) { const dropped = session.output.length - 1_000_000; session.output = session.output.slice(dropped); session.offset += dropped; } });
-    child.onExit(e => { session.exited = true; session.exitCode = e.exitCode; });
+    const session = { sharedAccessId:callContext().sharedAccessId, pty: child, shell, cwd: a.cwd || os.homedir(), cols:a.cols, rows:a.rows, waiters:new Set(), output: '', offset: 0, exited: false };
+    child.onData(data => { session.output += data; if (session.output.length > 1_000_000) { const dropped = session.output.length - 1_000_000; session.output = session.output.slice(dropped); session.offset += dropped; } for(const wake of session.waiters) wake(); });
+    child.onExit(e => { session.exited = true; session.exitCode = e.exitCode; for(const wake of session.waiters) wake(); });
     sessions.set(id, session);
     return text({ id, pid: child.pid, shell, next: '使用 terminal_write 输入命令并附带回车，再用 terminal_read 读取结果。' });
   });
   const getSession = id => { const s = sessions.get(id); if (!s) throw new Error('终端不存在'); return s; };
   tool('terminal_write', '向终端输入文本。命令末尾附带 \r 执行；\u0003 为 Ctrl+C。', { id: z.string(), data: z.string().max(200000) }, async a => { const s = getSession(a.id); if (s.exited) throw new Error('终端已退出'); s.pty.write(a.data); return text({ ok: true }); });
-  tool('terminal_read', '读取终端输出；cursor 为上次返回的 nextCursor，避免重复。输出环形缓存最大 100 万字符。', { id: z.string(), cursor: z.number().int().min(0).default(0), waitMs: z.number().int().min(0).max(10000).default(300) }, async a => {
-    if (a.waitMs) await new Promise(r => setTimeout(r, a.waitMs));
-    const s = getSession(a.id); return text({ output: s.output.slice(Math.max(0, a.cursor - s.offset)), truncated: a.cursor < s.offset, nextCursor: s.offset + s.output.length, exited: s.exited, exitCode: s.exitCode });
+  tool('terminal_read', '增量读取 PTY 输出。cursor 使用上次 nextCursor；waitMs 仅在无新输出时等待，输出到达或退出立即返回。limit 限制字符数。', { id: z.string(), cursor: z.number().int().min(0).default(0), limit:z.number().int().min(1).max(262144).default(65536), waitMs: z.number().int().min(0).max(10000).default(300) }, async a => {
+    const s = getSession(a.id);
+    if (a.waitMs && !s.exited && a.cursor >= s.offset+s.output.length) await new Promise(resolve => { const wake=()=>{clearTimeout(timer);s.waiters.delete(wake);resolve();}; const timer=setTimeout(wake,a.waitMs);s.waiters.add(wake); });
+    const begin=Math.max(s.offset,Math.min(a.cursor,s.offset+s.output.length));const output=s.output.slice(begin-s.offset,begin-s.offset+a.limit);
+    return text({output,truncated:a.cursor<s.offset,nextCursor:begin+output.length,hasMore:begin+output.length<s.offset+s.output.length,exited:s.exited,exitCode:s.exitCode});
   }, true);
-  tool('terminal_resize', '调整 PTY 终端尺寸。', { id: z.string(), cols: z.number().int().min(20).max(500), rows: z.number().int().min(5).max(200) }, async a => { getSession(a.id).pty.resize(a.cols, a.rows); return text({ ok: true }); });
-  tool('terminal_close', '终止并删除指定终端。', { id: z.string() }, async a => { getSession(a.id).pty.kill(); sessions.delete(a.id); return text({ ok: true }); });
+  tool('terminal_signal', '向持久终端前台程序发送 Ctrl+C 中断、Ctrl+D EOF 或 Ctrl+Z 暂停。Linux 可继续输入 fg 恢复；不会关闭 shell。', {id:z.string(),signal:z.enum(['interrupt','eof','suspend']).default('interrupt')}, async a=>{const s=getSession(a.id);if(s.exited)throw new Error('终端已退出');s.pty.write({interrupt:'\u0003',eof:'\u0004',suspend:'\u001a'}[a.signal]);return text({ok:true,signal:a.signal});});
+  tool('terminal_resize', '调整 PTY 终端尺寸。', { id: z.string(), cols: z.number().int().min(20).max(500), rows: z.number().int().min(5).max(200) }, async a => { const s=getSession(a.id);s.pty.resize(a.cols, a.rows);s.cols=a.cols;s.rows=a.rows; return text({ ok: true }); });
+  tool('terminal_close', '终止并删除指定终端。', { id: z.string() }, async a => { const s=getSession(a.id);s.pty.kill();s.exited=true;for(const wake of s.waiters)wake();sessions.delete(a.id); return text({ ok: true }); });
   tool('file_list', '列出任意目录（权限与服务当前用户一致）。', { path: z.string() }, async a => text((await fs.readdir(a.path, { withFileTypes: true })).slice(0, 2000).map(x => ({ name: x.name, directory: x.isDirectory() }))), true);
-  tool('file_read', '读取文本文件，最大 2 MB。', { path: z.string() }, async a => { if ((await fs.stat(a.path)).size > 2 * 1024 * 1024) throw new Error('文件过大，请用终端分段读取'); return text(await fs.readFile(a.path, 'utf8')); }, true);
-  tool('file_write', '写入 UTF-8 文本文件，可覆盖现有内容。', { path: z.string(), content: z.string().max(2 * 1024 * 1024) }, async a => { await fs.mkdir(path.dirname(path.resolve(a.path)), { recursive: true }); await fs.writeFile(a.path, a.content, 'utf8'); return text({ ok: true }); });
-  tool('file_patch', '精准替换文本文件片段。oldText 必须只出现一次，先 file_read 读取最新内容后再修改。返回增删行数。', { path: z.string(), oldText: z.string().min(1).max(2000000), newText: z.string().max(2000000) }, async a => {
-    if ((await fs.stat(a.path)).size > 2 * 1024 * 1024) throw new Error('文件超过 2 MB，请用终端分段处理');
-    const before = await fs.readFile(a.path, 'utf8'); const count = before.split(a.oldText).length - 1;
-    if (count !== 1) throw new Error(`原片段匹配 ${count} 次，请重新读取并扩大上下文，要求唯一匹配`);
-    await fs.writeFile(a.path, before.replace(a.oldText, a.newText), 'utf8');
-    return text({ ok: true, removedLines: a.oldText.split('\n').length, addedLines: a.newText.split('\n').length });
-  });
+  const range = { startLine: z.number().int().min(1).optional(), maxLines: z.number().int().min(1).max(2000).optional(), maxBytes: z.number().int().min(1024).max(262144).optional() };
+  const expectedHash = z.string().regex(/^[a-f0-9]{64}$/).optional();
+  tool('file_read', '读取 UTF-8 文本。兼容整文件读取（2 MB）；大文件优先 startLine/maxLines/maxBytes 分段，返回 nextLine，无需终端。', { path: z.string(), includeHash:z.boolean().default(false), ...range }, async a => {if(a.startLine||a.maxLines||a.maxBytes)return text(await readText(a.path,a));const content=await readWhole(a.path);return text(a.includeHash?{text:content,hash:fileHash(content)}:content);}, true);
+  tool('file_read_many', '一次读取多个文件，最多四路并发，每文件默认 200 行/64 KiB；保留顺序和单文件错误。', { paths: z.array(z.string()).min(1).max(20), ...range }, async a => text(await readMany(a.paths,a)), true);
+  tool('file_write', '原子写入 UTF-8 文件；expectedHash 可防止覆盖并发修改，返回 SHA-256。', { path: z.string(), content: z.string().max(2 * 1024 * 1024), expectedHash }, async a => text(await writeText(a.path,a.content,a.expectedHash)));
+  tool('file_patch', '精准替换唯一片段，同文件修改串行执行。先读取最新内容；支持 expectedHash，返回 SHA-256。', { path: z.string(), oldText: z.string().min(1).max(2000000), newText: z.string().max(2000000), expectedHash }, async a => text(await patchText(a.path,[a],a.expectedHash)));
+  tool('file_patch_many', '同一文件批量精确替换，只读写一次。按 edits 顺序匹配，任一步失败不写入；expectedHash 防止旧版本覆盖。', { path: z.string(), edits: z.array(z.object({oldText:z.string().min(1).max(200000),newText:z.string().max(200000)})).min(1).max(50), expectedHash }, async a => text(await patchText(a.path,a.edits,a.expectedHash)));
   tool('file_search', '按文件名搜索指定目录树。默认跳过 node_modules/.git，限制遍历数量避免全盘阻塞。返回部分结果和 truncated 标志。', { path: z.string(), query: z.string().min(1).max(300), maxResults: z.number().int().min(1).max(500).default(100), maxDepth: z.number().int().min(0).max(30).default(8) }, async a => {
-    const matches = []; let visited = 0, truncated = false; const queue = [{ dir: path.resolve(a.path), depth: 0 }];
-    while (queue.length && matches.length < a.maxResults && visited < 30000) { const {dir,depth} = queue.shift(); let entries; try { entries = await fs.readdir(dir, {withFileTypes:true}); } catch { continue; } for (const e of entries) { if (++visited > 30000) { truncated = true; break; } const target = path.join(dir,e.name); if(e.name.toLowerCase().includes(a.query.toLowerCase())) matches.push({path:target,directory:e.isDirectory()}); if(matches.length >= a.maxResults) { truncated = true; break; } if(e.isDirectory() && !['.git','node_modules'].includes(e.name) && depth < a.maxDepth) queue.push({dir:target,depth:depth+1}); } }
-    return text({matches,visited,truncated:truncated || queue.length>0});
+    const matches = []; const query = a.query.toLowerCase(); let visited = 0, truncated = false, head = 0; const queue = [{ dir: path.resolve(a.path), depth: 0 }];
+    while (head < queue.length && matches.length < a.maxResults && visited < 30000) { const {dir,depth} = queue[head++]; let entries; try { entries = await fs.readdir(dir, {withFileTypes:true}); } catch { continue; } for (const e of entries) { if (++visited > 30000) { truncated = true; break; } const target = path.join(dir,e.name); if(e.name.toLowerCase().includes(query)) matches.push({path:target,directory:e.isDirectory()}); if(matches.length >= a.maxResults) { truncated = true; break; } if(e.isDirectory() && !['.git','node_modules'].includes(e.name) && depth < a.maxDepth) queue.push({dir:target,depth:depth+1}); } }
+    return text({matches,visited,truncated:truncated || head < queue.length});
   }, true);
   tool('file_ops', '复制、移动、建立目录或删除指定绝对路径。删除目录必须显式 recursive=true。覆盖需要 overwrite=true。', { action: z.enum(['copy','move','mkdir','delete']), path: z.string(), destination: z.string().optional(), recursive: z.boolean().default(false), overwrite: z.boolean().default(false) }, async a => {
     if (!path.isAbsolute(a.path) || (a.destination && !path.isAbsolute(a.destination))) throw new Error('必须使用绝对路径');

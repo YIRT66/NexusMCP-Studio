@@ -6,7 +6,7 @@ function preview(value, limit) {
 }
 export function startActivity(tool, args) {
   if (origin() === 'preview') return () => {};
-  const event = { id: randomUUID(), sessionId:callContext().sessionId, requestId:callContext().requestId, source: origin() === 'shared' ? '公网远控' : origin() === 'api' ? 'API 模型' : origin() === 'remote' ? 'GPT / MCP' : '本机操作', tool, phase: 'running', startedAt: new Date().toISOString(), input: preview(args, 10000) };
+  const event = { id: randomUUID(), sessionId:callContext().sessionId, requestId:callContext().requestId, source: origin() === 'shared' ? '公网远控' : origin() === 'browser' ? '浏览器模型' : origin() === 'api' ? 'API 模型' : origin() === 'remote' ? 'GPT / MCP' : '本机操作', tool, phase: 'running', startedAt: new Date().toISOString(), input: preview(args, 10000) };
   process.send?.({ type: 'activity', event });
   return (result, error) => process.send?.({ type: 'activity', event: { ...event, phase: error || result?.isError ? 'error' : 'completed', endedAt: new Date().toISOString(), output: preview(error ? { error: error.message || String(error) } : result, 16000), durationMs: Date.now() - Date.parse(event.startedAt) } });
 }

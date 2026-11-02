@@ -1,4 +1,4 @@
-# NexusMCP Studio 0.2.0 Linux 运行与打包
+# NexusMCP Studio 0.3.0 Linux 运行与打包
 
 支持 Linux x64，持续集成在 Ubuntu 22.04 构建 AppImage、Debian 安装包及独立 MCP 服务压缩包。Windows 与 Linux 共用客户端与动效。
 
@@ -58,6 +58,18 @@ AppImage 需要发行版的 FUSE 2 支持（Ubuntu 22.04：`libfuse2`；较新 U
 GitHub Actions 的「Linux desktop and MCP service」会在 PR 和 main 推送时验证并构建桌面安装包、服务包及浏览器扩展 ZIP，可在运行结果的 Artifacts 中下载。
 
 ## Linux 控制能力
+
+### 完全控制与系统授权（0.3.0）
+
+会话权限选择「完全权限」后，软件自动请求 `pkexec` 系统授权。完成桌面认证后，MCP 的文件、PTY、系统和进程操作由 root 控制服务执行；Electron、普通浏览器及外接插件管理仍属于桌面用户。聊天栏的「root 已授权」来自服务实际身份。Windows 的完全权限仍表示免除工具逐次审批，不自动授予管理员身份。
+
+Debian/Ubuntu 需要 polkit（`policykit-1` 或发行版对应的 `polkitd`/`pkexec` 包）和运行中的桌面认证代理。没有认证代理、未安装 pkexec 或用户取消时，软件报告失败并恢复普通服务。切换权限会重启 MCP，因此公网 MCP 地址会改变，需要重新连接；原终端会关闭。无需将整个 Electron 以 root 启动，无需关闭浏览器沙箱，也不会保存密码或修改 sudoers。
+
+### 文件与终端效率
+
+大文件用 `file_read({path,startLine:1,maxLines:200,maxBytes:65536})`，沿返回的 `nextLine` 继续；单行超过字节限额会返回 `oversizedLine`，可增加 `maxBytes` 或通过终端读取。`file_read({path,includeHash:true})` 返回整文件文本及 SHA-256，传给 `file_patch`/`file_patch_many` 的 `expectedHash` 可检测旧版本。多文件读取使用 `file_read_many`；同文件多次修改使用 `file_patch_many`。批量修改按顺序匹配，任何匹配失败均不写入。
+
+`terminal_read` 使用 `cursor`、`limit` 和 `waitMs`，若 `hasMore` 为真则继续增量读取。`terminal_signal` 的 `interrupt` 中断前台程序，`eof` 发送 EOF，`suspend` 暂停前台作业（支持作业控制的 shell 中可用 `fg` 恢复）。输入送达与命令完成仍是两件事，需检查输出和退出状态。
 
 | 能力 | 支持情况 |
 | --- | --- |

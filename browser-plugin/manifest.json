@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "NexusMCP 网页聊天助手",
-  "version": "1.2.0",
-  "description": "与 NexusMCP 内置浏览器共用的网页聊天适配器，支持已登录 AI 网站的发送、读取与停止。",
+  "version": "1.3.0",
+  "description": "支持无原生 MCP 的 AI 网页通过扩展调用本机工具，并回传 Markdown 和组件回复。",
   "permissions": [
     "activeTab",
     "tabs",
@@ -33,6 +33,7 @@
         "https://kimi.ai/*"
       ],
       "js": [
+        "reply-markdown.js",
         "adapter.js",
         "content.js"
       ],

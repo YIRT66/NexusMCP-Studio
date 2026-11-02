@@ -1,4 +1,4 @@
-import Markdown from 'react-markdown';
+import {RichReply} from './RichReply';
 import {motion,useReducedMotion} from 'framer-motion';
 import {useEffect,useRef,useState} from 'react';
 import type {Message} from '../types';
@@ -27,6 +27,6 @@ export function ChatMessage({message,streaming=false}:{message:Message;streaming
   const content=useReplyText(message.content,streaming&&message.role==='assistant',!!reduced);
   return <motion.article className={`session-message chat-message-row ${message.role} ${streaming?'is-streaming':''}`} data-provider={message.role==='assistant'?identity.id:undefined} aria-label={message.role==='user'?'你的消息':`${identity.name} 的回复`} initial={{opacity:0,y:reduced?0:7,scale:reduced||message.role!=='user'?1:.985}} animate={{opacity:1,y:0,scale:1}} transition={{type:'tween',duration:reduced?0:.2,ease:[.22,1,.36,1]}}>
     {message.role==='assistant'&&<header className="chat-message-author"><AIAvatar provider={message.provider}/><span>{message.model||identity.name}</span>{message.source&&<small className="message-source">{message.source==='api'?'API':message.source==='browser'?'网页':'MCP'}</small>}</header>}
-    <div className="chat-message-content"><div className={message.role==='user'?'chat-message-bubble':'chat-message-response'}>{!content&&streaming?<ReplyTyping/>:<div className="markdown"><Markdown>{content}</Markdown></div>}</div></div>
+    <div className="chat-message-content"><div className={message.role==='user'?'chat-message-bubble':'chat-message-response'}>{!content&&streaming?<ReplyTyping/>:<div className="markdown"><RichReply content={content}/></div>}</div></div>
   </motion.article>;
 }

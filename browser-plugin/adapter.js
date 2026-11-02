@@ -25,8 +25,9 @@ globalThis.nexusWebchatAdapter = async function (request = {}) {
   const enabled = element => element && !element.disabled && element.getAttribute('aria-disabled') !== 'true';
   const labelled = pattern => [...document.querySelectorAll('button,[role="button"]')].filter(visible).find(element => pattern.test(`${element.getAttribute('aria-label') || ''} ${element.getAttribute('title') || ''} ${element.innerText || ''}`.trim()));
   const editor = () => find(config.input) || find(['main textarea', 'main [contenteditable="true"][role="textbox"]', 'form textarea', 'form [contenteditable="true"]']);
-  const sendButton = () => find(config.send) || labelled(/^(?:send(?: message| prompt)?|发送(?:消息)?|提交)\s*$/i) || [...(editor()?.closest('form')?.querySelectorAll('button[type="submit"]') || [])].find(visible);
-  const stopButton = () => find(config.stop) || labelled(/^(?:stop(?: generating| response| generation)?|停止(?:生成|回答|回复)?|终止生成)\s*$/i);
+  const sendButton = () => find(config.send) || labelled(/^(?:send(?: message| prompt)?|发送(?:消息)?|提交)(?:\s*[（(].*?[)）])?\s*$/i) || [...(editor()?.closest('form')?.querySelectorAll('button[type="submit"]') || [])].find(visible);
+  const stopButton = () => find(config.stop) || labelled(/^(?:stop(?: generating| response| generation)?|停止(?:生成|回答|回复)?|终止生成)(?:\s*[（(].*?[)）])?\s*$/i);
+  const keyboardSend=['deepseek','qwen','kimi','doubao'].includes(provider);
   const value = element => element ? element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement ? element.value : element.innerText || element.textContent || '' : '';
   const identity = element => {
     if (!element) return '';
@@ -45,9 +46,12 @@ globalThis.nexusWebchatAdapter = async function (request = {}) {
     const userText = value(lastUser);
     const afterUser = last && lastUser ? !!(lastUser.compareDocumentPosition(last) & Node.DOCUMENT_POSITION_FOLLOWING) : false;
     const requestId = afterUser ? userText.match(/"requestId"\s*:\s*"([^"\n]+)"/)?.[1] : undefined;
-    const reply = (value(last)).slice(-200000);
+    const reply = (globalThis.NexusReplyMarkdown?globalThis.NexusReplyMarkdown(last):value(last)).slice(-200000);
+    const sent=globalThis.__nexusSentTurn;
+    const fallbackRequest=sent && (identity(last)!==sent.replyId||replies.length>sent.replyCount||reply!==sent.reply) ? sent.requestId : undefined;
+    const toolBlocks = last ? [...last.querySelectorAll('pre')].slice(-8).map(node=>(node.textContent||'').slice(0,200000)) : [];
     const problem = !input && /Invalid content type|Route Error|Something went wrong|糟糕，出错了/.test(document.body?.innerText || '') ? '网页返回错误，请刷新网页或重新绑定标签页' : '';
-    const result = { adapterVersion: '1.2.0', provider, url: location.href, title: document.title, ready: !!input, input: value(input), busy: !!stopButton() || streaming, streaming, canSend: !!enabled(button), reply, replyId: identity(last), replyCount: replies.length, lastUserText: userText.slice(-120000), replyForRequestId: requestId, problem, replyMode: 'mcp' };
+    const result = { adapterVersion: '1.2.0', provider, toolBlocks, url: location.href, title: document.title, ready: !!input, input: value(input), busy: !!stopButton() || streaming, streaming, canSend: !!enabled(button)||!button&&keyboardSend&&!!input, reply, replyId: identity(last), replyCount: replies.length, lastUserText: userText.slice(-120000), replyForRequestId: requestId || (!lastUser?fallbackRequest:undefined), problem, replyMode: 'mcp' };
     if (!history) return result;
     const nodes = [...users.map(node => ({ node, role: 'user' })), ...replies.map(node => ({ node, role: 'assistant' }))].sort((a, b) => a.node === b.node ? 0 : a.node.compareDocumentPosition(b.node) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
     const counts = { user: 0, assistant: 0 }; let budget = 200000;
@@ -73,6 +77,17 @@ globalThis.nexusWebchatAdapter = async function (request = {}) {
   await new Promise(resolve => setTimeout(resolve, 200));
   const normalize = text => text.replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
   if (normalize(value(input)) !== normalize(request.text)) throw new Error('网页输入框未接受消息，未点击发送');
-  const button = sendButton(); if (!enabled(button)) throw new Error('未找到可用的发送按钮，消息已填入网页但未发送，请检查网页');
-  button.click(); return { dispatched: true, before, after: snapshot(false) };
+  const button = sendButton();
+  if (button&&!enabled(button) || !button&&!keyboardSend) throw new Error('未找到可用的发送按钮，消息已填入网页但未发送，请检查网页');
+  globalThis.__nexusSentTurn={requestId:request.text.match(/"requestId"\s*:\s*"([^"\n]+)"/)?.[1],replyId:before.replyId,replyCount:before.replyCount,reply:before.reply};
+  if(button)button.click();
+  else {
+    input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
+    input.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));
+    let accepted=false;
+    for(let i=0;i<10;i++){await new Promise(resolve=>setTimeout(resolve,100));const after=snapshot(false);if(!value(input).trim()||after.busy||after.replyCount>before.replyCount){accepted=true;break;}}
+    if(!accepted)throw new Error('网页没有确认 Enter 发送，请检查网页；不会自动重复提交');
+  }
+  return { dispatched: true, before, after: snapshot(false) };
+
 };

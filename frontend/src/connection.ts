@@ -2,7 +2,7 @@ import {useSessionUI} from './session-ui';
 import {useStudio} from './store';
 let socket:WebSocket|null=null;
 export async function request<T>(path:string,body?:unknown,method?:string):Promise<T>{
- const response=await fetch('/api'+path,{method:method||(body===undefined?'GET':'POST'),headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
+ const response=await fetch('/api'+path,{method:method||(body===undefined?'GET':'POST'),headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(path==='/permissions'||path==='/settings'?150000:15000)});
  if(!response.ok){const error=await response.json().catch(()=>({error:`HTTP ${response.status}`}));throw new Error(error.detail||error.error||'本机请求失败')}
  if(response.status===204)return undefined as T;return response.json();
 }

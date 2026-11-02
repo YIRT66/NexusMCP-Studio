@@ -1,0 +1,10 @@
+import { startPrivileged } from './elevation.mjs';
+const keys=['MCP_EMBEDDED','MCP_PORT','MCP_DATA_DIR','MCP_STORAGE_DIR','MCP_URL_FILE','MCP_NO_TUNNEL','NEXUS_STANDALONE','CLOUDFLARED_PATH','DISPLAY','XAUTHORITY','WAYLAND_DISPLAY','XDG_SESSION_TYPE','DBUS_SESSION_BUS_ADDRESS','NEXUS_BROWSER_PATH','NEXUS_BROWSER_HEADLESS','HTTP_PROXY','HTTPS_PROXY','NO_PROXY','NODE_EXTRA_CA_CERTS'];
+const environment=Object.fromEntries(keys.filter(key=>process.env[key]!==undefined).map(key=>[key,process.env[key]]));
+const {child,send}=startPrivileged(process.argv[2],environment);
+child.stderr.on('data',data=>process.stderr.write(data));
+child.once('error',error=>{console.error('系统提权启动失败：'+error.message+'；请安装 policykit-1/polkit 并启动桌面认证代理。');process.exit(1);});
+child.once('exit',(code)=>{if(code===126||code===127)console.error('系统授权被取消或未通过，未启用 root 权限。');process.exit(code||0);});
+process.on('message',send);
+process.once('disconnect',()=>{send({type:'stop'});child.stdin.end();});
+process.once('SIGTERM',()=>{send({type:'stop'});child.stdin.end();});

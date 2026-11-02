@@ -1,0 +1,9 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {fork} from 'node:child_process';import {promises as fs} from 'node:fs';import os from 'node:os';import path from 'node:path';import {fileURLToPath} from 'node:url';
+test('Linux 系统授权取消：不保存完全控制、不报告 root，并恢复普通服务',{skip:process.platform!=='linux'||process.getuid?.()===0,timeout:20000},async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-elevation-'));await fs.writeFile(path.join(dir,'pkexec'),'#!/bin/sh\nexit 126\n',{mode:0o755});
+ const child=fork(fileURLToPath(new URL('./server.mjs',import.meta.url)),[],{env:{...process.env,PATH:dir+path.delimiter+process.env.PATH,NEXUS_DATA_DIR:dir,NEXUS_PORT:'0',MCP_NO_TUNNEL:'1'},stdio:['ignore','pipe','pipe','ipc']});let diagnostics='';child.stderr.on('data',c=>diagnostics+=c);
+ t.after(async()=>{if(child.connected){child.send({type:'shutdown'});await new Promise(resolve=>{child.once('exit',resolve);setTimeout(()=>{child.kill();resolve();},7000).unref();});}await fs.rm(dir,{recursive:true,force:true});});
+ const ready=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error(diagnostics)),10000);child.on('message',m=>{if(m.type==='runtime.ready'){clearTimeout(timer);resolve(m);}});});
+ const response=await fetch(ready.url+'/api/permissions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({mode:'full'})});assert.equal(response.status,400);assert.match((await response.json()).error,/退出|授权/);
+ for(let i=0;i<100;i++){const boot=await fetch(ready.url+'/api/bootstrap').then(r=>r.json());assert.notEqual(boot.settings.elevated,true);assert.notEqual(boot.service.privilege,'root');if(boot.service.phase==='running'){assert.equal(boot.settings.mode,'safe');return;}await new Promise(resolve=>setTimeout(resolve,25));}assert.fail('未恢复普通用户服务');
+});

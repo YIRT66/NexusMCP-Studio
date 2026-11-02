@@ -13,7 +13,7 @@ export class ClientReplies {
   async create(data) {
     if (typeof data.sessionId !== 'string' || !data.sessionId || data.sessionId.length > 150) throw new Error('缺少有效的客户端 sessionId');
     if (this.requests.some(request => request.sessionId === data.sessionId && ['sending', 'waiting', 'replying'].includes(request.status))) throw new Error('当前会话仍在等待回复，请等待或停止');
-    const request = { requestId: randomUUID(), sessionId: data.sessionId, provider: data.provider || 'chatgpt', model: data.model, sharedAccessId:data.sharedAccessId,mode: data.mode === 'api' ? 'api' : 'mcp', createdAt: Date.now(), status: 'sending', text: '', userText: data.text, sequence: 0, lastOperation: '' };
+    const request = { requestId: randomUUID(), sessionId: data.sessionId, provider: data.provider || 'chatgpt', model: data.model, permission:data.permission || 'workspace', sharedAccessId:data.sharedAccessId,mode: data.mode === 'api' ? 'api' : 'mcp', createdAt: Date.now(), status: 'sending', text: '', userText: data.text, sequence: 0, lastOperation: '' };
     this.activeSessionId = data.sessionId; this.requests.push(request); this.requests = this.requests.slice(-100); await this.save(); return request;
   }
   message(request) { return { id: 'mcp_' + request.requestId, role: 'assistant', content: request.text, sessionId: request.sessionId, provider: request.provider, model: request.model, requestId: request.requestId, source: request.source || (request.mode === 'api' ? 'api' : 'MCP'), createdAt: request.createdAt, firstTokenAt: request.firstTokenAt, completedAt: request.completedAt, updatedAt: request.updatedAt, usage: request.usage, status: request.status, done: !['sending', 'waiting', 'replying'].includes(request.status), sequence: request.sequence }; }

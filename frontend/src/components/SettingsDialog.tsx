@@ -38,7 +38,7 @@ export function SettingsDialog({initialTab='general'}:{initialTab?:Tab}) {
   async function save() {
     setBusy(true); setError('');
     try {
-      await request('/settings', draft);
+      await request('/settings', {...draft,elevated:draft.mode==='overdrive'});
       s.set({ settings: { ...useStudio.getState().settings, ...draft, apiKey: '' } });
       setDraft(current => ({ ...current, apiKey: '' }));
       setSaved(true);
@@ -85,7 +85,7 @@ export function SettingsDialog({initialTab='general'}:{initialTab?:Tab}) {
             <label className="settings-field">服务名称<input value={name} placeholder="我的 MCP 服务" onChange={event => setName(event.target.value)} /></label><label className="settings-field">服务地址<input value={url} placeholder="https://example.com/mcp" onChange={event => setUrl(event.target.value)} /></label>
             <button className="shell-outline-button" disabled={!s.connected || busy || !name.trim() || !url.trim()} onClick={() => void addServer()}><Plus size={14} />{busy ? '正在连接…' : '添加连接'}</button>
           </>}
-          {tab === 'permissions' && <><h3 className="settings-section-title">操作权限</h3><p className="settings-description">会话中的权限菜单支持仅可查看、工作区内修改与完全权限；实际权限由本地运行时确认。</p><div className="settings-row"><div><strong>默认审批方式</strong><p>在线任务由本地运行时执行权限检查</p></div><UISelect label="默认审批方式" value={draft.mode||s.mode} onChange={value=>setDraft({...draft,mode:value as Settings['mode']})} options={[{value:'safe',label:'逐次审批'},{value:'overdrive',label:'完全权限'}]}/></div><div className="settings-row"><div><strong>桌面预览帧率</strong><p>调整实时画面的更新频率</p></div><UISelect label="桌面预览帧率" value={String(draft.frameRate)} onChange={value=>setDraft({...draft,frameRate:Number(value)})} options={[1,2,5,10].map(value=>({value:String(value),label:`${value} FPS`}))}/></div></>}
+          {tab === 'permissions' && <><h3 className="settings-section-title">操作权限</h3><p className="settings-description">会话中的权限菜单支持仅可查看、工作区内修改与完全权限；实际权限由本地运行时确认。</p><div className="settings-row"><div><strong>默认审批方式</strong><p>Linux 完全权限会请求系统认证，以 root 运行电脑控制服务</p></div><UISelect label="默认审批方式" value={draft.mode||s.mode} onChange={value=>setDraft({...draft,mode:value as Settings['mode']})} options={[{value:'safe',label:'逐次审批'},{value:'overdrive',label:'完全权限'}]}/></div><div className="settings-row"><div><strong>桌面预览帧率</strong><p>调整实时画面的更新频率</p></div><UISelect label="桌面预览帧率" value={String(draft.frameRate)} onChange={value=>setDraft({...draft,frameRate:Number(value)})} options={[1,2,5,10].map(value=>({value:String(value),label:`${value} FPS`}))}/></div></>}
           {tab !== 'general' && !s.connected && <p className="settings-offline">连接本地运行时后，可保存和启用这些配置。</p>}
           {error && <p className="settings-error" role="alert">{error}</p>}
         </motion.div></AnimatePresence></div>

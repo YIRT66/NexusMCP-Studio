@@ -1,4 +1,4 @@
-# NexusMCP Studio 0.2.0 产品说明
+# NexusMCP Studio 0.3.0 产品说明
 
 ## 定位
 

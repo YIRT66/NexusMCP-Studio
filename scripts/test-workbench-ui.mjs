@@ -12,7 +12,7 @@ const fixture=createServer(async(req,res)=>{
  let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);res.writeHead(200,{'content-type':'text/event-stream'});
  const packet=value=>res.write('data: '+JSON.stringify(value)+'\n\n');
  if(body.messages.at(-1).role!=='tool'){packet({choices:[{delta:{tool_calls:[{index:0,id:'fixture-system',type:'function',function:{name:'system_read',arguments:'{"section":"overview"}'}}]},finish_reason:'tool_calls'}]});}
- else{const system=JSON.parse(body.messages.at(-1).content);const answer=`已读取当前设备的系统信息。\n\n- **系统**：${system.os} / ${system.arch}\n- **处理器**：${system.cpu.logicalCores} 个逻辑核心\n- **内存**：${(system.memory.totalBytes/1024**3).toFixed(1)} GB\n\n本次调用已完成，可以在时间轴查看参数、输出和实际耗时。`;
+ else{const system=JSON.parse(body.messages.at(-1).content);const answer=`已读取当前设备的系统信息。\n\n- **系统**：${system.os} / ${system.arch}\n- **处理器**：${system.cpu.logicalCores} 个逻辑核心\n- **内存**：${(system.memory.totalBytes/1024**3).toFixed(1)} GB\n\n本次调用已完成，可以在时间轴查看参数、输出和实际耗时。`+'\n\n| 项目 | 状态 |\n| --- | --- |\n| 表格 | 已支持 |\n\n'+['```nexus-ui',JSON.stringify({type:'metrics',title:'设备资源',items:[{label:'逻辑核心',value:system.cpu.logicalCores,unit:'核'}]}),'```','```nexus-ui',JSON.stringify({type:'chart',title:'资源比较',items:[{label:'CPU',value:system.cpu.logicalCores},{label:'内存',value:8}]}),'```','```nexus-ui',JSON.stringify({type:'card',title:'运行结果',text:'系统信息已核实。'}),'```','```nexus-ui',JSON.stringify({type:'table',title:'组件表格',columns:['名称','状态'],rows:[['组件','已生成']]}),'```'].join('\n');
  for(let i=0;i<answer.length;i+=12){packet({choices:[{delta:{content:answer.slice(i,i+12)}}]});await new Promise(resolve=>setTimeout(resolve,35));}packet({choices:[{delta:{},finish_reason:'stop'}]});}
  res.end('data: [DONE]\n\n');
 });await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
@@ -29,6 +29,11 @@ try{
  assert.equal((await page.request.get(ready.url+'/api/bootstrap').then(r=>r.json())).service.phase,'running');
  await page.getByRole('button',{name:'选择模型',exact:true}).click();await page.getByRole('button',{name:'API 模型 通过接口连接'}).click();await page.getByRole('menuitemradio',{name:'本地联调模型 fixture-system'}).click();
  for(const text of ['查看当前系统环境并总结可用资源。','再次读取系统信息，核对当前内存。']){await page.getByRole('textbox',{name:'任务指令'}).fill(text);await page.getByRole('textbox',{name:'任务指令'}).press('Enter');await page.getByRole('button',{name:'停止任务',exact:true}).waitFor();await page.getByRole('button',{name:'停止任务',exact:true}).waitFor({state:'hidden'});}
+ assert.equal(await page.locator('.execution-group-toggle[aria-expanded=false]').count(),2);
+ assert.equal(await page.locator('.execution-card').count(),0);
+ await page.locator('.execution-group-toggle').first().click();await page.locator('.execution-summary').first().click();await page.locator('.execution-code').first().waitFor();
+ assert.ok(await page.locator('.reply-table-scroll table').count()>=4);assert.equal(await page.locator('.reply-metrics').count(),2);assert.equal(await page.locator('.reply-chart').count(),2);assert.equal(await page.locator('.reply-card').count(),2);
+ await page.screenshot({path:path.join(output,'rich-replies-and-calls.png')});
  await page.getByRole('textbox',{name:'任务指令'}).fill('切换视图时保留的草稿');await page.getByRole('tab',{name:'时间轴',exact:true}).click();assert.equal(await page.getByRole('textbox',{name:'任务指令'}).inputValue(),'切换视图时保留的草稿');await page.getByRole('textbox',{name:'任务指令'}).fill('');const records=page.locator('.trajectory-record');assert.ok(await records.count()>=6);
  await page.getByRole('button',{name:'折叠所有轮次'}).click();assert.equal(await records.count(),0);await page.getByLabel('搜索时间轴').fill('logicalCores');assert.ok(await records.count()>0);await page.getByLabel('搜索时间轴').fill('');await page.getByRole('button',{name:'折叠所有轮次'}).click();
  await page.locator('.trajectory-record.tool').first().click();await page.getByRole('button',{name:'输出',exact:true}).click();await page.getByRole('complementary',{name:'记录详情'}).getByText('logicalCores',{exact:false}).waitFor();

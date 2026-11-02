@@ -1,6 +1,6 @@
 # NexusMCP Studio
 
-NexusMCP Studio 0.2.0 是支持 Windows、Linux 的桌面与网页工作空间。通过已登录的 AI 网页或 OpenAI 兼容 API 处理任务，使用 MCP 操作电脑，并查看对话、工具执行、审批和时间轴。
+NexusMCP Studio 0.3.0 是支持 Windows、Linux 的桌面与网页工作空间。通过已登录的 AI 网页或 OpenAI 兼容 API 处理任务，使用 MCP 操作电脑，并查看对话、工具执行、审批和时间轴。
 
 当前版本：桌面与网页客户端 **0.2.0**，电脑控制内核包 **1.3.0**，浏览器扩展 **1.2.0**。仓库提供源代码；依赖、安装包、账户状态和本机数据不提交到 Git。
 

@@ -1,7 +1,7 @@
 import express from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { promises as fs, appendFileSync } from 'node:fs';
+import { promises as fs } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -34,16 +34,18 @@ app.use((req, res, next) => {
   if (req.headers.origin && !['https://chatgpt.com', publicOrigin].includes(req.headers.origin)) return res.status(403).json({ error: '无效来源' });
   next();
 });
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'nexus-computer-mcp', version: '1.2.0' }));
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'nexus-computer-mcp', version: '1.4.0' }));
 app.use(express.json({ limit: '3mb' }));
 let concurrent = 0;
 let count = 0, bucket = Date.now();
-const audit = event => {
-  try { appendFileSync(path.join(data, 'audit.jsonl'), JSON.stringify({ time: new Date().toISOString(), ...event }) + '\n'); } catch {}
-};
+let auditQueue=Promise.resolve(),auditBuffer=[],auditTimer;
+function flushAudit(){clearTimeout(auditTimer);auditTimer=undefined;const batch=auditBuffer.splice(0).join('');if(batch)auditQueue=auditQueue.catch(()=>{}).then(()=>fs.appendFile(path.join(data,'audit.jsonl'),batch,{mode:0o600}));return auditQueue.catch(error=>console.error('审计写入失败：'+error.message));}
+const audit=event=>{auditBuffer.push(JSON.stringify({time:new Date().toISOString(),...event})+'\n');if(auditBuffer.length>=32)void flushAudit();else if(!auditTimer)auditTimer=setTimeout(()=>void flushAudit(),40);};
+
 const registry = new Map();
 registerTools({ registerTool(name, config, handler) { registry.set(name, { config, handler, schema: z.object(config.inputSchema) }); } }, audit);
-function publishManifest(){process.send?.({ type: 'manifest', tools: [...[...registry].map(([name, t]) => ({ name, description: t.config.description, readOnly: !!t.config.annotations.readOnlyHint, inputSchema:zodToJsonSchema(t.schema,{$refStrategy:'none'}) })),...extensionConfiguration().tools.map(t=>({name:t.name,description:t.description,extensionId:t.extensionId,readOnly:false,inputSchema:t.inputSchema}))] });}
+const localManifest=[...registry].map(([name,t])=>({name,description:t.config.description,readOnly:!!t.config.annotations.readOnlyHint,inputSchema:zodToJsonSchema(t.schema,{$refStrategy:'none'}),annotations:t.config.annotations}));
+function publishManifest(){process.send?.({ type: 'manifest', tools: [...localManifest,...extensionConfiguration().tools.map(t=>({name:t.name,description:t.description,extensionId:t.extensionId,readOnly:false,inputSchema:t.inputSchema}))] });}
 publishManifest();
 async function invokeTool(name,args){
   const local=registry.get(name);
@@ -57,9 +59,8 @@ app.post(endpoint, async (req, res) => {
   if (++count > 600 || concurrent >= 8) return res.status(429).json({ error: '请求过多，请稍后重试' });
   concurrent++;
   if (req.body?.method === 'initialize') process.send?.({ type: 'client', name: String(req.body.params?.clientInfo?.name || 'MCP 客户端').slice(0,100), at: Date.now() });
-  const server = new McpServer({ name: 'NexusMCP Studio', version: '1.2.0' }, { instructions: (policy.prompt || instructions)+'\n\n'+clientReplyRule });
-  registerTools(server, audit);
-  server.server.setRequestHandler(ListToolsRequestSchema, async()=>({tools:[...[...registry].map(([name,t])=>({name,description:t.config.description,inputSchema:zodToJsonSchema(t.schema,{$refStrategy:'none'}),annotations:t.config.annotations})),...extensionConfiguration().tools.map(({name,description,inputSchema,annotations})=>({name,description,inputSchema,annotations:{...annotations,readOnlyHint:false,destructiveHint:true}}))]}));
+  const server = new McpServer({ name: 'NexusMCP Studio', version: '1.4.0' }, { capabilities:{tools:{}}, instructions: (policy.prompt || instructions)+'\n\n'+clientReplyRule });
+  server.server.setRequestHandler(ListToolsRequestSchema, async()=>({tools:[...localManifest.map(({readOnly,...tool})=>tool),...extensionConfiguration().tools.map(({name,description,inputSchema,annotations})=>({name,description,inputSchema,annotations:{...annotations,readOnlyHint:false,destructiveHint:true}}))]}));
   server.server.setRequestHandler(CallToolRequestSchema, async({params})=>invokeTool(params.name,params.arguments));
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   let closed = false;
@@ -84,6 +85,7 @@ async function stop(code = 0) {
   if (stopping) return;
   stopping = true;
   tunnel?.child.kill(); cancelApprovals(); cancelExtensions(); await disposeTools(); listener.closeAllConnections(); listener.close();
+  await flushAudit();
   await fs.rm(path.join(data, 'connection.json'), { force: true });
   await fs.rm(urlFile, { force: true });
   process.exit(code);
@@ -116,7 +118,7 @@ try {
   const url = publicOrigin + endpoint;
   await fs.writeFile(path.join(data, 'connection.json'), JSON.stringify({ url, localUrl: `http://127.0.0.1:${port}${endpoint}`, port, pid: process.pid }), { mode: 0o600 });
   await fs.writeFile(urlFile, url + '\n', { mode: 0o600 });
-  process.send?.({ type: 'ready', url, localUrl: `http://127.0.0.1:${port}${endpoint}`, port });
+  process.send?.({ type: 'ready', url, localUrl: `http://127.0.0.1:${port}${endpoint}`, port, privilege:process.getuid?.()===0?'root':'user' });
   console.log('\nNexusMCP 电脑控制 MCP 已启动（无身份验证）\n');
   if (process.env.MCP_EMBEDDED !== '1') {
     console.log(`连接地址：${url}\n`);
