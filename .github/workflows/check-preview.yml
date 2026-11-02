@@ -1,0 +1,25 @@
+name: Check public preview access
+on:
+  workflow_dispatch:
+    inputs:
+      origin:
+        description: Preview HTTPS origin
+        required: true
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check preview from an independent network
+        env:
+          PREVIEW_ORIGIN: ${{ inputs.origin }}
+        run: |
+          node --input-type=module <<'JS'
+          const origin=process.env.PREVIEW_ORIGIN;
+          if(!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(origin))throw new Error('Invalid preview origin');
+          const response=await fetch(origin,{signal:AbortSignal.timeout(30000)});
+          const body=await response.text();
+          console.log(JSON.stringify({status:response.status,body:body.slice(0,200)}));
+          if(response.status!==403||!body.includes('分享链接'))throw new Error('Preview gateway did not return the expected access gate');
+          JS
