@@ -48,7 +48,7 @@ export class PublicAccess {
   if(!this.allowedHost(req)){res.writeHead(403).end('无效主机');return;}
   const join=req.url.match(/^\/join\/([a-f0-9]{64})$/);
   if(join&&req.method==='GET'&&equal(join[1],this.token)){
-   const secure=true;res.setHeader('Set-Cookie',`${this.cookieName}=${this.token}; Path=/; HttpOnly; SameSite=Strict${secure?'; Secure':''}`);res.writeHead(302,{Location:'/'}).end();return;
+   const secure=true;res.setHeader('Set-Cookie',`${this.cookieName}=${this.token}; Path=/; HttpOnly; SameSite=Lax${secure?'; Secure':''}`);res.writeHead(302,{Location:'/'}).end();return;
   }
   if(!this.authorized(req)||!this.originAllowed(req)){res.writeHead(403,{'Content-Type':'text/plain; charset=utf-8'}).end('远程访问需要有效的分享链接。请向设备持有人索取当前链接。');return;}
   if(/^\/api\/(?:public-access|dsh)(?:\/|$)/.test(req.url)){res.writeHead(403,{'Content-Type':'application/json'}).end(JSON.stringify({error:'此设置仅可在本机修改'}));return;}
