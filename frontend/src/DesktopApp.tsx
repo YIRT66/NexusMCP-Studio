@@ -32,7 +32,8 @@ export function App() {
   useEffect(()=>{if(!s.connected)return;let active=true;void request<WebchatState>('/webchat/activate',{sessionId:ui.activeSessionId}).then(state=>{if(active)applyWebchatState(state);}).catch(error=>{if(active&&useStudio.getState().webchat.transport!=='extension')s.set({error:error.message});});return()=>{active=false;};},[ui.activeSessionId,s.connected,s.webchat.transport]);
   const [page, setPage] = useState<Page>('chat');
   const visited=useRef(new Set<Page>());visited.current.add(page);
-  useEffect(()=>{const explore=()=>setPage('explorer');const terminal=()=>setPage('terminal');window.addEventListener('nexus:explore',explore);window.addEventListener('nexus:terminal',terminal);return()=>{window.removeEventListener('nexus:explore',explore);window.removeEventListener('nexus:terminal',terminal);};},[]);
+  const[explorerNavigation,setExplorerNavigation]=useState({path:sessionStorage.getItem('nexus.explore-path')||'',sequence:0});
+  useEffect(()=>{const explore=(event:Event)=>{setExplorerNavigation(current=>({path:(event as CustomEvent).detail.path,sequence:current.sequence+1}));setPage('explorer');};const terminal=()=>setPage('terminal');window.addEventListener('nexus:explore',explore);window.addEventListener('nexus:terminal',terminal);return()=>{window.removeEventListener('nexus:explore',explore);window.removeEventListener('nexus:terminal',terminal);};},[]);
   const [sidebar, setSidebar] = useState(()=>!matchMedia('(max-width: 700px)').matches);
   useEffect(()=>{const media=matchMedia('(max-width: 700px)');const update=()=>setSidebar(!media.matches);media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
   const [query, setQuery] = useState('');
@@ -116,7 +117,7 @@ export function App() {
         <div className={`plain-view shell-chat-view ${page==='chat'?'current':''}`} ref={inertWhen(page!=='chat')}><ConversationWorkbench browserSuspended={page!=='chat'||mcpOpen} onOpenModel={openModel} onConnect={()=>setConnection(n=>n+1)}/></div>
         <div className={`plain-view work-view ${page === 'desktop' ? 'current' : ''}`} ref={inertWhen(page!=='desktop')}><Suspense fallback={<p className="empty-view">正在打开桌面…</p>}>{visited.current.has('desktop')&&<LiveDesktop active={page === 'desktop'} />}</Suspense></div>
         <div className={`plain-view work-view ${page === 'terminal' ? 'current' : ''}`} ref={inertWhen(page!=='terminal')}><Suspense fallback={<p className="empty-view">正在打开终端…</p>}>{visited.current.has('terminal')&&<CyberTerminal />}</Suspense></div>
-        <div className={`plain-view work-view ${page === 'explorer' ? 'current' : ''}`} ref={inertWhen(page!=='explorer')}><Suspense fallback={<p className="empty-view">正在打开文件…</p>}>{visited.current.has('explorer')&&<SystemExplorer />}</Suspense></div>
+        <div className={`plain-view work-view ${page === 'explorer' ? 'current' : ''}`} ref={inertWhen(page!=='explorer')}><Suspense fallback={<p className="empty-view">正在打开文件…</p>}>{visited.current.has('explorer')&&<SystemExplorer navigation={explorerNavigation}/>}</Suspense></div>
       </main>
     </div>
     <AnimatePresence>{s.settingsOpen && <SettingsDialog initialTab={settingsTab}/>}</AnimatePresence>

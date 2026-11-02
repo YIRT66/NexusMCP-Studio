@@ -16,7 +16,7 @@ await call('client_reply',{requestId:request.requestId,sessionId,text:answer,don
 await api('/extensions/example',{});
 await api('/public-access/start',{});
 const state=await until(async()=>{const value=await api('/public-access');if(value.phase==='error')throw new Error(value.error);return value.phase==='running'?value:null;});
-const joined=await fetch(state.url,{redirect:'manual',signal:AbortSignal.timeout(30000)});const cookie=joined.headers.get('set-cookie')?.split(';')[0];if(joined.status!==302||!cookie)throw new Error('公网分享授权入口检查失败');const opened=await fetch(new URL(state.url).origin,{headers:{cookie},signal:AbortSignal.timeout(30000)});if(!opened.ok)throw new Error('公网分享授权跳转检查失败');
+const joined=await until(async()=>{const response=await fetch(state.url,{redirect:'manual',signal:AbortSignal.timeout(30000)});return response.status===302?response:null;},90);const cookie=joined.headers.get('set-cookie')?.split(';')[0];if(joined.status!==302||!cookie)throw new Error('公网分享授权入口检查失败');const opened=await fetch(new URL(state.url).origin,{headers:{cookie},signal:AbortSignal.timeout(30000)});if(!opened.ok)throw new Error('公网分享授权跳转检查失败');
 const key=createPublicKey({key:Buffer.from(process.env.PREVIEW_PUBLIC_KEY,'base64'),format:'der',type:'spki'});
 await writeFile('preview-link.enc',publicEncrypt({key,oaepHash:'sha256'},Buffer.from(JSON.stringify({url:state.url,expiresAt:new Date(Date.now()+3600000).toISOString()}))));
 console.log('预览实例已启动；访问链接已加密保存。');
