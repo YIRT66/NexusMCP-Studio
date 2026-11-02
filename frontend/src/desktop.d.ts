@@ -2,6 +2,7 @@ export {};
 declare global {
   interface Window {
     nexusDesktop?: {
+      revealPath?:(path:string)=>Promise<boolean>;
       getRuntimeURL:()=>Promise<string|null>;
       openDsh?:()=>Promise<void>;openBrowserPlugin:()=>Promise<string>;
       webchat:(operation:string,data?:unknown)=>Promise<any>;

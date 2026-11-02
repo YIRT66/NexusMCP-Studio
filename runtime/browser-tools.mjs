@@ -24,7 +24,7 @@ export class BrowserTools {
         if (!tool || request.permission === 'readonly' && !tool.readOnly) throw new Error('当前权限不允许此工具：'+entry.name);
         const output = await this.call(entry.name,entry.args,request);
         const content = output.content?.filter(b=>b.type==='text').map(b=>b.text).join('\n') || '[工具返回非文本结果]';
-        const result = { id:entry.id, name:entry.name, isError:!!output.isError, output:content.slice(0,24000) };
+        const result = { id:entry.id, name:entry.name, isError:!!output.isError, output:content.length>24000?content.slice(0,24000)+'\n[结果超过浏览器传输限额，请使用分段读取工具]':content };
         state.ids.set(entry.id,{signature,result}); results.push(result);
       }
       if (!['sending','waiting','replying'].includes(request.status)) return;

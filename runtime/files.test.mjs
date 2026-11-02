@@ -12,7 +12,8 @@ test('文件：分段 UTF-8、大文件、批量读取、批量修改回滚与�
   const batch=await readMany([file,path.join(dir,'missing')]);assert.match(batch[0].text,/第二行/);assert.ok(batch[1].error);
   const snapshot=await writeText(file,'alpha beta');
   const attempts=await Promise.allSettled([patchText(file,[{oldText:'alpha',newText:'A'}],snapshot.hash),patchText(file,[{oldText:'beta',newText:'B'}],snapshot.hash)]);
-  assert.equal(attempts.filter(v=>v.status==='fulfilled').length,1);assert.equal(await readWhole(file),'A beta');
+  assert.equal(attempts.filter(v=>v.status==='fulfilled').length,1);assert.ok(['A beta','alpha B'].includes(await readWhole(file)));
+  await writeText(file,'A beta');
   await assert.rejects(patchText(file,[{oldText:'A',newText:'changed'},{oldText:'absent',newText:'fail'}]),/未写入/);assert.equal(await readWhole(file),'A beta');
   await writeText(file,'unique');await fs.chmod(file,0o640);await patchText(file,[{oldText:'unique',newText:'kept'}]);if(process.platform!=='win32')assert.equal((await fs.stat(file)).mode&0o777,0o640);
   if(process.platform!=='win32'){const link=path.join(dir,'link');await fs.symlink(file,link);await patchText(link,[{oldText:'kept',newText:'symlink preserved'}]);assert.equal((await fs.lstat(link)).isSymbolicLink(),true);assert.equal(await readWhole(file),'symlink preserved');}

@@ -38,6 +38,8 @@ jobs:
         run: node --test runtime/process-control.test.mjs
       - name: Check standalone browser bridge tests
         run: node --test runtime/browser-extension.test.mjs runtime/webchat-relay.test.mjs
+      - name: Verify workspace tools and Studio extensions
+        run: node --test runtime/files.test.mjs runtime/workspace.test.mjs runtime/studio-host.test.mjs
       - name: Bundle Windows Node.js and cloudflared for the local service
         shell: pwsh
         run: |

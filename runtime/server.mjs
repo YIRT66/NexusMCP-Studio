@@ -16,6 +16,9 @@ import {PublicAccess} from './public-access.mjs';
 import {DshRuntime} from './dsh-runtime.mjs';
 import {browserControl,closeBrowser} from '../preserved-mcp/browser.mjs';
 import {spawnControlWorker} from './elevation.mjs';
+import {ensureCloudflared} from '../preserved-mcp/tunnel.mjs';
+import {readText} from '../preserved-mcp/files.mjs';
+import {StudioHost} from './studio-host.mjs';
 import {ActivityJournal} from './activity-journal.mjs';
 import {BrowserTools} from './browser-tools.mjs';
 import {ApiModels} from './api-models.mjs';
@@ -33,7 +36,7 @@ const configFile = path.join(dataDir, 'settings.json');
 const bridgeKeyFile=path.join(dataDir,'browser-bridge.key');let bridgeKey;try{bridgeKey=(await fs.readFile(bridgeKeyFile,'utf8')).trim()}catch{}if(!/^[a-f0-9]{64}$/.test(bridgeKey||'')){bridgeKey=randomBytes(32).toString('hex');await fs.writeFile(bridgeKeyFile,bridgeKey,{mode:0o600})}
 let settings = { theme: 'dark', fontSize: 14, detail: 'standard', autoCollapse: true, frameRate: 1, mode: 'safe', disabled: [], prompt: instructions };
 try { settings = { ...settings, ...JSON.parse(await fs.readFile(configFile, 'utf8')) }; } catch {}
-if(createHash('sha256').update(settings.prompt||'').digest('hex')==='0b6fb239ee461140bec85def6fde5d2c90b7fa81d6765c8ce3cd69fe0235bfd0')settings.prompt=instructions;
+if(['0b6fb239ee461140bec85def6fde5d2c90b7fa81d6765c8ce3cd69fe0235bfd0','a64cad725d9b8e4937b88307310f21617683a8d1c2d6ee584570245bdd6740ef'].includes(createHash('sha256').update(settings.prompt||'').digest('hex')))settings.prompt=instructions;
 let state = { phase: 'stopped', url: '', localUrl: '', error: '', lastClient: '', clientAt: 0, startedAt: 0, localOnly: process.env.MCP_NO_TUNNEL === '1' };
 let child, stopPromise, tools = [], calls = [], logs = [], approvals = [], history = [];
 let terminal = null, terminalCursor = 0, pollingTerminal = false, pollingScreen = false;
@@ -102,20 +105,23 @@ async function sendChat(data){
  if(state.phase!=='running')throw new Error('请先启动 MCP 服务，并在 GPT 当前对话中启用该 MCP 应用，回复将通过 client_reply 回传');
  if(typeof data.text!=='string'||!data.text.trim()||data.text.length>100000)throw new Error('消息为空或超过 100000 字符');
  const req=await replies.create({...data,sessionId:data.sessionId||webState.sessionId,provider:webState.provider});
- try{const result=await webCommand('send',{...data,sessionId:req.sessionId,requestId:req.requestId,replyVia:'mcp',instructions:settings.prompt||instructions,toolBridge:webTransport==='extension'&&webState.provider!=='chatgpt',toolCatalog:manifest(availableTools()).filter(t=>t.enabled&&!['client_reply','client_session'].includes(t.name)&&(data.permission!=='readonly'||t.readOnly)).map(({name,description,inputSchema})=>({name,description,inputSchema}))});await replies.sent(req);if(req.status!=='completed'){webState={...webState,busy:true,status:'正在等待模型执行与回复',replyMode:'mcp'};emit('webchat.state',webState);emit('agent.status',{phase:'executing'})}return {...result,requestId:req.requestId,sessionId:req.sessionId,replyMode:'mcp'};}catch(e){await replies.failed(req,e);throw e}
+ try{const result=await webCommand('send',{...data,text:typeof data.workspace==='string'&&data.workspace?'【当前工作区】'+JSON.stringify({path:data.workspace.slice(0,4000),permission:data.permission})+'\n\n'+data.text:data.text,sessionId:req.sessionId,requestId:req.requestId,replyVia:'mcp',instructions:settings.prompt||instructions,toolBridge:webTransport==='extension'&&webState.provider!=='chatgpt',toolCatalog:manifest(availableTools()).filter(t=>t.enabled&&!['client_reply','client_session'].includes(t.name)&&(data.permission!=='readonly'||t.readOnly)).map(({name,description,inputSchema})=>({name,description,inputSchema}))});await replies.sent(req);if(req.status!=='completed'){webState={...webState,busy:true,status:'正在等待模型执行与回复',replyMode:'mcp'};emit('webchat.state',webState);emit('agent.status',{phase:'executing'})}return {...result,requestId:req.requestId,sessionId:req.sessionId,replyMode:'mcp'};}catch(e){await replies.failed(req,e);throw e}
 }
 const extensions = new ExtensionManager(dataDir,(type,data)=>{
   if(type==='extensions.config'){if(child?.connected)child.send({type:'extensions.configure',configuration:data});emit('tools.changed',manifest(availableTools()));}
   else if(type==='extension.log')log(`[扩展 ${data.id.slice(0,8)}] ${data.text}`);
   else emit(type,data);
 });
+const studioHost=new StudioHost({callTool:(name,args,context)=>rpc(name,args,'local',context),emit,readSettings:()=>({...settings}),updateSettings:body=>saveSettings(body)});
+extensions.studioHost=studioHost;
 await extensions.init();
 function availableTools(){return [...tools.filter(t=>!t.extensionId),...extensions.configuration().tools.map(t=>({...t,readOnly:false}))];}
 function update(next) { state = { ...state, ...next }; emit('service.state', state); }
 function log(text) { for (let line of String(text).split(/\r?\n/)) { line = line.trim(); if (!line) continue; const entry = { id: randomUUID(), at: Date.now(), text: line.slice(0, 2500) }; logs.push(entry); logs = logs.slice(-300); emit('service.log', entry); } }
 const decode = result => { const block = result?.content?.find(b => b.type === 'text'); if (result?.isError) throw new Error(block?.text || '工具执行失败'); try { return JSON.parse(block?.text || '{}'); } catch { return block?.text; } };
 function manifest(items) { return items.map(t => ({ ...t, group: t.extensionId?'外接 MCP':t.name.startsWith('skill')?'技能':t.name.startsWith('terminal_') ? '终端' : t.name.startsWith('file_') ? '文件' : t.name.startsWith('hancode_') ? '浏览器' : '系统与桌面', enabled: !settings.disabled.includes(t.name), calls: calls.filter(c => c.name === t.name).length, running: calls.some(c => c.name === t.name && c.status === 'running') })); }
-function rpc(name, args = {}, origin = 'local', context = {}) {
+function rpc(name,args={},origin='local',context={}){return studioHost.invoke({name,args,origin,...context},call=>rawRpc(call.name,call.args,call.origin,context));}
+function rawRpc(name, args = {}, origin = 'local', context = {}) {
   if (!child?.connected || state.phase !== 'running') return Promise.reject(new Error('请先启动 MCP 服务'));
   const id = randomUUID();
   return new Promise((resolve, reject) => { const timer = setTimeout(() => { pending.delete(id); reject(new Error('本机工具调用超时')); }, 120000); pending.set(id, { resolve, reject, timer }); child.send({ type: 'rpc', id, name, args, origin, context }); });
@@ -149,7 +155,8 @@ async function start() {
   extensions.resume();
   logs = []; approvals = [];
   update({ phase: 'starting', url: '', localUrl: '', error: '', lastClient: '', clientAt: 0 });
-  const { node: executable, cloudflared } = platform.runtimePaths(path.join(root, 'preserved-mcp'));
+  let { node: executable, cloudflared } = platform.runtimePaths(path.join(root, 'preserved-mcp'));
+  if(settings.elevated&&process.env.MCP_NO_TUNNEL!=='1'&&!cloudflared&&!process.env.CLOUDFLARED_PATH)cloudflared=await ensureCloudflared(dataDir);
   await fs.mkdir(path.join(dataDir,'data','tunnel-home'),{recursive:true});
   for(const file of ['audit.jsonl','connection.json','PUBLIC-MCP-URL.txt','data/quick-tunnel.yml']){const handle=await fs.open(path.join(dataDir,file),'a',0o600);await handle.close();}
   const current = spawnControlWorker(executable, { cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: { ...process.env, ...(cloudflared && !process.env.CLOUDFLARED_PATH ? { CLOUDFLARED_PATH: cloudflared } : {}), MCP_EMBEDDED: '1', MCP_PORT: '0', MCP_DATA_DIR: dataDir, MCP_STORAGE_DIR: dataDir, MCP_URL_FILE: path.join(dataDir, 'PUBLIC-MCP-URL.txt'), NEXUS_STANDALONE: '1' } }, settings.elevated===true);
@@ -212,7 +219,7 @@ async function applySettings(body) {
   return settings;
 }
 const route = callback => async (req, res, next) => { try { await callback(req, res); } catch (e) { next(e); } };
-app.get('/api/health', (_req,res)=>res.json({ok:true,service:'nexus-local-runtime',version:'1.4.0',mcp:state.phase}));
+app.get('/api/health', (_req,res)=>res.json({ok:true,service:'nexus-local-runtime',version:'1.4.1',mcp:state.phase}));
 app.get('/api/webchat',(_req,res)=>res.json(webState));
 app.get('/api/client/context',(_req,res)=>res.json(replies.context()));
 app.post('/api/client/requests',route(async(req,res)=>{if(state.phase!=='running')throw new Error('请先启动 MCP 服务');if(typeof req.body.text!=='string'||!req.body.text.trim()||req.body.text.length>100000)throw new Error('消息为空或过长');const pending=await replies.create({...req.body,provider:webState.provider});await replies.sent(pending);webState={...webState,busy:true,replyMode:'mcp',status:'正在等待模型执行与回复'};emit('webchat.state',webState);emit('agent.status',{phase:'executing'});res.status(201).json({requestId:pending.requestId,sessionId:pending.sessionId,replyMode:'mcp',tool:'client_reply'});}));
@@ -240,6 +247,8 @@ app.post('/api/model-profiles',route(async(req,res)=>res.status(201).json(await 
 app.delete('/api/model-profiles/:id',route(async(req,res)=>{await apiModels.remove(req.params.id);res.status(204).end();}));
 app.post('/api/chat/send',route(async(req,res)=>res.status(202).json(await apiModels.start({...req.body,...sharedContext(req)}))));
 app.post('/api/chat/stop',route(async(req,res)=>{await apiModels.stop(req.body.sessionId);res.json({ok:true});}));
+app.get('/api/extensions/:id/assets/*resource',route(async(req,res)=>{if(isShared(req))return res.status(403).end();const entry=extensions.get(req.params.id);const relative=Array.isArray(req.params.resource)?req.params.resource.join('/') : req.params.resource;res.sendFile(await studioHost.asset(entry,relative));}));
+app.post('/api/extensions/example',route(async(req,res)=>{if(isShared(req))return res.status(403).end();res.status(202).json(await extensions.install({kind:'plugin',source:{type:'local',value:path.join(root,'examples','studio-delight')}}));}));
 app.get('/api/extensions',(_req,res)=>res.json({items:extensions.list()}));
 app.post('/api/extensions/install',route(async(req,res)=>res.status(202).json(await extensions.install(req.body))));
 app.post('/api/extensions/upload',express.raw({type:'application/octet-stream',limit:'64mb'}),route(async(req,res)=>{
@@ -259,6 +268,15 @@ app.put('/api/tools/:name', route(async(req,res)=>{if(!availableTools().some(t=>
 app.post('/api/tools/call', route(async(req,res)=>{if(typeof req.body.name!=='string')throw new Error('需要工具名称 name');res.json(await rpc(req.body.name,req.body.args||{},isShared(req)?'shared':'local',sharedContext(req)));}));
 app.get('/api/prompt/default', (_req, res) => res.json({ prompt: instructions }));
 app.post('/api/approvals/:id', (req, res) => { if (!approvals.some(a => a.id === req.params.id && a.expiresAt>Date.now())) return res.status(404).json({ error: '审批已过期或已处理' }); child?.send({ type: 'approval', id: req.params.id, allowed: req.body.allowed === true }); res.json({ ok: true }); });
+app.get('/api/fs/preview',route(async(req,res)=>{
+ const target=path.resolve(String(req.query.path||'')),stat=await fs.stat(target);if(!stat.isFile())throw new Error('请选择文件');
+ const extension=path.extname(target).toLowerCase(),kind=/^\.(png|jpg|jpeg|gif|webp|ico)$/.test(extension)?'image':extension==='.pdf'?'pdf':'text';
+ if(kind!=='text')return res.json({path:target,name:path.basename(target),size:stat.size,kind});
+ const result=await readText(target,{maxLines:1200,maxBytes:256000});if(result.text.includes('\0'))return res.json({path:target,name:path.basename(target),size:stat.size,kind:'unsupported'});
+ res.json({...result,path:target,name:path.basename(target),size:stat.size,kind});
+}));
+app.get('/api/fs/content',route(async(req,res)=>{const target=path.resolve(String(req.query.path||'')),extension=path.extname(target).toLowerCase();const types={'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp','.ico':'image/x-icon','.pdf':'application/pdf'};if(!types[extension])throw new Error('此格式请用文本预览');const stat=await fs.stat(target);if(!stat.isFile()||stat.size>32*1024*1024)throw new Error('预览文件超过 32 MB');res.setHeader('X-Content-Type-Options','nosniff');res.type(types[extension]).sendFile(target);}));
+app.post('/api/fs/open',route(async(req,res)=>{if(isShared(req))return res.status(403).json({error:'请在本机打开资源管理器'});if(typeof req.body.path!=='string'||!path.isAbsolute(req.body.path))throw new Error('请选择有效绝对路径');const target=await fs.realpath(req.body.path);const stat=await fs.stat(target),directory=stat.isDirectory()?target:path.dirname(target);await new Promise((resolve,reject)=>{const opener=spawn(process.platform==='win32'?'explorer.exe':process.platform==='darwin'?'open':'xdg-open',[directory],{stdio:'ignore',windowsHide:true});opener.once('error',reject);opener.once('spawn',resolve);opener.unref();});res.json({ok:true,path:directory});}));
 app.get('/api/fs/list', route(async (req, res) => { const target = path.resolve(String(req.query.path || os.homedir())); const entries = await fs.readdir(target, { withFileTypes: true }); const rows = await Promise.all(entries.slice(0, 2000).map(async e => { let size; try { if (e.isFile()) size = (await fs.stat(path.join(target, e.name))).size; } catch {} return { name: e.name, path: path.join(target, e.name), directory: e.isDirectory(), size }; })); res.json({ path: target, entries: rows.sort((a,b) => Number(b.directory)-Number(a.directory) || a.name.localeCompare(b.name)) }); }));
 app.get('/api/system/processes', route(async (_req, res) => { const result = decode(await rpc('system_read', { section: 'processes', limit: 300 }, 'preview')); res.json(result.processes.map(p => ({ pid: p.pid, name: p.name, cpu: p.cpuSeconds || 0, memory: p.memoryBytes }))); }));
 app.use('/api', (_req, res) => res.status(404).json({ error: '接口不存在' }));

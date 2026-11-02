@@ -1,6 +1,7 @@
 import {useState} from 'react';
 import {AnimatePresence,motion,useReducedMotion} from 'framer-motion';
 import {Check,ChevronRight,LoaderCircle,TriangleAlert} from 'lucide-react';
+import {extractChanges} from './FileChanges';
 import {ToolCallCard} from './ToolCallCard';
 import {useStudio} from '../store';
 import type {TrajectoryRecord} from '../trajectory';
@@ -12,6 +13,7 @@ export function groupExecutions(records:TrajectoryRecord[]){
 }
 export function ExecutionGroup({calls}:{calls:ToolCall[]}){
   const detail=useStudio(s=>s.settings.detail);const[open,setOpen]=useState(detail==='expanded');const reduced=useReducedMotion();
+  const changes=calls.flatMap(call=>extractChanges(call.output));const added=changes.reduce((n,c)=>n+c.addedLines,0),removed=changes.reduce((n,c)=>n+c.removedLines,0);
   const running=calls.some(call=>call.status==='running'),errors=calls.filter(call=>call.status==='error').length;
-  return <section className={`execution-group ${running?'running':''}`}><button className="execution-group-toggle" aria-expanded={open} onClick={()=>setOpen(!open)}><ChevronRight size={14} className={open?'expanded':''}/>{running?<LoaderCircle size={14} className="spin"/>:errors?<TriangleAlert size={14}/>:<Check size={14}/>}<span>{running?'正在执行':'已执行'} {calls.length} 项操作</span>{errors>0&&<small>{errors} 项失败</small>}<small>{open?'收起':'展开调用'}</small></button><AnimatePresence initial={false}>{open&&<motion.div className="execution-group-body" initial={{height:0,opacity:0}} animate={{height:'auto',opacity:1}} exit={{height:0,opacity:0}} transition={{duration:reduced?0:.18}}>{calls.map(call=><ToolCallCard key={call.id} call={call}/>)}</motion.div>}</AnimatePresence></section>;
+  return <section className={`execution-group ${running?'running':''}`}><button className="execution-group-toggle" aria-expanded={open} onClick={()=>setOpen(!open)}><ChevronRight size={14} className={open?'expanded':''}/>{running?<LoaderCircle size={14} className="spin"/>:errors?<TriangleAlert size={14}/>:<Check size={14}/>}<span>{running?'正在执行':'已执行'} {calls.length} 项操作</span>{changes.length>0&&<><strong className="diff-added">+{added}</strong><strong className="diff-removed">−{removed}</strong></>}{errors>0&&<small>{errors} 项失败</small>}<small>{open?'收起':'展开调用'}</small></button><AnimatePresence initial={false}>{open&&<motion.div className="execution-group-body" initial={{height:0,opacity:0}} animate={{height:'auto',opacity:1}} exit={{height:0,opacity:0}} transition={{duration:reduced?0:.18}}>{calls.map(call=><ToolCallCard key={call.id} call={call}/>)}</motion.div>}</AnimatePresence></section>;
 }

@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import { createReadStream } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
+import {fileChanges} from './changes.mjs';
 
 const locks = new Map();
 export const fileHash = text => createHash('sha256').update(text).digest('hex');
@@ -45,7 +46,8 @@ export async function readText(file, { startLine = 1, maxLines = 200, maxBytes =
 export async function readWhole(file) {
   const handle = await fs.open(file, 'r');
   try {
-    if ((await handle.stat()).size > 2 * 1024 * 1024) throw new Error('文件超过 2 MB，请使用 startLine/maxLines 分段读取');
+    const stat=await handle.stat();if(!stat.isFile())throw new Error('目标必须是普通文件');
+    if (stat.size > 2 * 1024 * 1024) throw new Error('文件超过 2 MB，请使用 startLine/maxLines 分段读取');
     return await handle.readFile('utf8');
   } finally { await handle.close(); }
 }
@@ -65,9 +67,11 @@ async function atomicWrite(file, content) {
 }
 export function writeText(file, content, expectedHash) {
   return lockedFile(file, async target => {
-    if (expectedHash && fileHash(await readWhole(target)) !== expectedHash) throw new Error('文件已变化，请重新读取后修改');
-    await atomicWrite(target, content);
-    return { ok: true, bytes: Buffer.byteLength(content), hash: fileHash(content) };
+    const before=await readWhole(target).catch(error=>{if(error.code==='ENOENT')return '';if(!expectedHash&&/2 MB/.test(error.message))return null;throw error;});
+    if(expectedHash&&(before===null||fileHash(before)!==expectedHash))throw new Error('文件已变化，请重新读取后修改');
+    const changes=before===null?{path:target,addedLines:content.split('\n').length,removedLines:0,approximate:true,lines:[],truncated:true}:fileChanges(before,content,target);
+    if(before!==content)await atomicWrite(target, content);
+    return { ok: true, bytes: Buffer.byteLength(content), hash: fileHash(content),...changes };
   });
 }
 export function patchText(file, edits, expectedHash) {
@@ -81,8 +85,8 @@ export function patchText(file, edits, expectedHash) {
       after = after.slice(0, first) + newText + after.slice(first + oldText.length);
     }
     if (Buffer.byteLength(after) > 4 * 1024 * 1024) throw new Error('修改后文件超过 4 MB');
-    await atomicWrite(target, after);
-    return { ok: true, edits: edits.length, removedLines: edits.reduce((n,e) => n + e.oldText.split('\n').length, 0), addedLines: edits.reduce((n,e) => n + e.newText.split('\n').length, 0), hash: fileHash(after) };
+    if(before!==after)await atomicWrite(target, after);
+    return { ok: true, edits: edits.length, ...fileChanges(before,after,target), hash: fileHash(after) };
   });
 }
 export async function readMany(files, options) {

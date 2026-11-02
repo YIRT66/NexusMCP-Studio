@@ -52,6 +52,7 @@ export class ApiModels {
     const endpoint = profile.baseUrl.endsWith('/chat/completions') ? profile.baseUrl : profile.baseUrl + '/chat/completions';
     const messages = [{ role: 'system', content: apiInstructions(this.prompt?.()) }, ...job.history];
     let prompt = data.text;
+    if(typeof data.workspace==='string'&&data.workspace)prompt='【当前工作区】'+JSON.stringify({path:data.workspace.slice(0,4000),permission:data.permission})+'\n使用此路径作为文件工具和命令 cwd 的起点。\n\n'+prompt;
     if (data.goal) prompt = '任务目标：' + String(data.goal).slice(0, 10000) + '\n\n' + prompt;
     if (data.planning) prompt = '先说明计划，等待用户确认后执行修改。\n\n' + prompt;
     for (const file of data.attachments || []) prompt += '\n\n附件 ' + file.name.slice(0, 200) + '：\n' + file.text;
@@ -117,7 +118,7 @@ export class ApiModels {
         const result = await this.call(call.function.name, args, request);
         controller.signal.throwIfAborted();
         const text = result.content?.map(block => block.type === 'text' ? block.text : block.type === 'image' ? '[工具返回图像]' : '').join('\n') || JSON.stringify(result);
-        messages.push({ role: 'tool', tool_call_id: call.id, content: text.slice(0, 50000) });
+        messages.push({ role: 'tool', tool_call_id: call.id, content: text.length>400000?text.slice(0,400000)+'\n[结果超过传输限额，请使用分段读取工具]':text });
       }
       if (content.trim()) accumulated += '\n\n';
       await publish(); this.update(request.sessionId, { busy: true, phase: 'thinking', status: '正在整理工具结果' });

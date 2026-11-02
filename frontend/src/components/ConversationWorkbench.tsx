@@ -78,8 +78,8 @@ export function ConversationWorkbench({onOpenModel,onConnect,browserSuspended=fa
     if(!canSend){setError(isApi?'请先添加并选择 API 模型。':browserLink.detail);return;}
     const content=text.trim(),sessionId=session.id;setBusy(true);setError('');
     try{
-      if(isApi)await request('/chat/send',{text:content,sessionId,profileId:session.apiProfileId,planning:session.planning,goal:session.goal,permission:session.permission,attachments:webFiles});
-      else{if(attachments.length)throw new Error('请先在对应 AI 网页上传附件。');await request('/webchat/send',{text:content,sessionId,planning:session.planning,goal:session.goal});}
+      if(isApi)await request('/chat/send',{text:content,sessionId,profileId:session.apiProfileId,planning:session.planning,goal:session.goal,permission:session.permission,workspace:workspace.path,attachments:webFiles});
+      else{if(attachments.length)throw new Error('请先在对应 AI 网页上传附件。');await request('/webchat/send',{text:content,sessionId,planning:session.planning,goal:session.goal,permission:session.permission,workspace:workspace.path});}
       u.updateSessionId(sessionId,{draft:''});if(useSessionUI.getState().activeSessionId===sessionId){setText('');setAttachments([]);setWebFiles([]);}
     }catch(error){if(useSessionUI.getState().activeSessionId===sessionId)setError((error as Error).message);}finally{setBusy(false);}
   }

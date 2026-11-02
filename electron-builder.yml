@@ -23,7 +23,8 @@ win:
     - target: nsis
       arch: [x64]
   executableName: NexusMCP Studio
-  signAndEditExecutable: false
+  icon: frontend/public/icon.ico
+  signAndEditExecutable: true
 portable:
   artifactName: NexusMCP-Studio.exe
 nsis:
@@ -37,6 +38,7 @@ nsis:
   deleteAppDataOnUninstall: false
 
 linux:
+  icon: frontend/public/icon.png
   target:
     - target: AppImage
       arch: [x64]

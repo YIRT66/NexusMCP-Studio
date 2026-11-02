@@ -73,10 +73,16 @@ async function inspect(directory,kind){
  const servers=[];
  if(kind!=='skill'&&config){if(typeof config!=='object'||Array.isArray(config))throw new Error('mcpServers 必须是对象');for(const [name,value] of Object.entries(config)){if(!value||typeof value!=='object')throw new Error('MCP 配置格式无效');if(value.url){const url=new URL(value.url);if(!['http:','https:'].includes(url.protocol))throw new Error('MCP 地址仅支持 HTTP/HTTPS');servers.push({name,url:url.href,headers:value.headers||{}})}else if(typeof value.command==='string'&&value.command){if(value.args&&!Array.isArray(value.args))throw new Error('MCP args 必须是数组');servers.push({name,command:value.command,args:value.args||[],env:value.env||{},cwd:value.cwd})}else throw new Error('MCP 服务缺少 url 或 command')}}
  if(servers.length>20)throw new Error('单个扩展最多配置 20 个 MCP 服务');
+ let studio;
+ if(manifest.studio){
+  const config=manifest.studio;if(!Array.isArray(config.permissions)||!config.permissions.includes('full'))throw new Error('Studio 插件需声明 permissions:["full"]，可修改界面及运行时');
+  studio={permissions:['full']};for(const key of ['frontend','backend','styles'])if(config[key]){if(typeof config[key]!=='string')throw new Error('Studio 入口必须是相对路径');const target=within(directory,config[key]);if(!(await fs.stat(target)).isFile())throw new Error('Studio 入口不存在');studio[key]=config[key];}
+  if(!studio.frontend&&!studio.backend&&!studio.styles)throw new Error('Studio 插件缺少入口');
+ }
  const skills=await discoverSkills(directory);
- if(!servers.length&&!skills.length&&pkg.dsh)throw new Error('检测到 DSH 原生插件，请在「DSH 原生」中安装，由官方兼容引擎运行。');
- if(!servers.length&&!skills.length)throw new Error('未发现可用入口。技能需要 SKILL.md；插件需要 nexus-plugin.json / .mcp.json、package.json 的 nexusMcp/bin 或技能目录。');
- return {name:String(manifest.name||pkg.name||(kind==='skill'&&skills.length===1?skills[0].name:null)||path.basename(directory)).slice(0,150),description:String(manifest.description||pkg.description||(kind==='skill'&&skills.length===1?skills[0].description:'')).slice(0,2000),version:String(manifest.version||pkg.version||'1.0.0').slice(0,80),servers,skills};
+ if(!servers.length&&!skills.length&&!studio&&pkg.dsh)throw new Error('检测到 DSH 原生插件，请在「DSH 原生」中安装，由官方兼容引擎运行。');
+ if(!servers.length&&!skills.length&&!studio)throw new Error('未发现可用入口。技能需要 SKILL.md；插件需要 nexus-plugin.json / .mcp.json、package.json 的 nexusMcp/bin 或技能目录。');
+ return {name:String(manifest.name||pkg.name||(kind==='skill'&&skills.length===1?skills[0].name:null)||path.basename(directory)).slice(0,150),description:String(manifest.description||pkg.description||(kind==='skill'&&skills.length===1?skills[0].description:'')).slice(0,2000),version:String(manifest.version||pkg.version||'1.0.0').slice(0,80),servers,skills,studio};
 }
 export async function installExtension(job){
  const {destination,body}=job;await fs.mkdir(destination,{recursive:true});let directory=destination;let pythonPath;

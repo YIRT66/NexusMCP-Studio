@@ -1,0 +1,11 @@
+{
+  "name": "Studio 工作搭子",
+  "version": "1.0.0",
+  "description": "可拖动工作搭子、启动动画、自定义回复组件和运行时工具中间件示例。",
+  "studio": {
+    "permissions": ["full"],
+    "frontend": "ui.mjs",
+    "backend": "backend.mjs",
+    "styles": "style.css"
+  }
+}

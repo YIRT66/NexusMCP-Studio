@@ -1,10 +1,12 @@
 # NexusMCP Studio
 
-NexusMCP Studio 0.3.0 是支持 Windows、Linux 的桌面与网页工作空间。通过已登录的 AI 网页或 OpenAI 兼容 API 处理任务，使用 MCP 操作电脑，并查看对话、工具执行、审批和时间轴。
+NexusMCP Studio 0.3.1 是支持 Windows、Linux 的桌面与网页工作空间。通过已登录的 AI 网页或 OpenAI 兼容 API 处理任务，使用 MCP 操作电脑，并查看对话、工具执行、审批和时间轴。
 
-当前版本：桌面与网页客户端 **0.3.0**，电脑控制内核包 **1.4.0**，浏览器扩展 **1.3.0**。仓库提供源代码；依赖、安装包、账户状态和本机数据不提交到 Git。
+当前版本：桌面与网页客户端 **0.3.1**，电脑控制内核包 **1.4.1**，浏览器扩展 **1.3.1**。仓库提供源代码；依赖、安装包、账户状态和本机数据不提交到 Git。
 
-安装包见 [0.3.0 Release](https://github.com/YIRT66/NexusMCP-Studio/releases/tag/v0.3.0)，新功能与系统授权说明见 [版本说明](docs/releases/0.3.0.md)。
+安装包见 [0.3.1 Release](https://github.com/YIRT66/NexusMCP-Studio/releases/tag/v0.3.1)，新功能与系统授权说明见 [版本说明](docs/releases/0.3.1.md)。
+
+本版本新增 `workspace_read` 项目快照、`workspace_batch` 一次性文件任务、`command_run` 一次性命令；新增全权 Studio 扩展、文件预览、真实增删行、项目右键菜单与更多聊天组件。详见 [Studio 扩展开发](docs/STUDIO-EXTENSIONS.md)。后续默认使用 `0.3.x` 补丁号小步推进。
 
 ## 当前功能
 

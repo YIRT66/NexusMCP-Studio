@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { registerTools, disposeTools, revokeSharedAccess } from './tools.mjs';
+import { registerTools, disposeTools, revokeSharedAccess, cancelToolRequest } from './tools.mjs';
 import { ensureCloudflared, startTunnel } from './tunnel.mjs';
 import { instructions } from './instructions.mjs';
 import { z } from 'zod';
@@ -34,7 +34,7 @@ app.use((req, res, next) => {
   if (req.headers.origin && !['https://chatgpt.com', publicOrigin].includes(req.headers.origin)) return res.status(403).json({ error: '无效来源' });
   next();
 });
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'nexus-computer-mcp', version: '1.4.0' }));
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'nexus-computer-mcp', version: '1.4.1' }));
 app.use(express.json({ limit: '3mb' }));
 let concurrent = 0;
 let count = 0, bucket = Date.now();
@@ -59,7 +59,7 @@ app.post(endpoint, async (req, res) => {
   if (++count > 600 || concurrent >= 8) return res.status(429).json({ error: '请求过多，请稍后重试' });
   concurrent++;
   if (req.body?.method === 'initialize') process.send?.({ type: 'client', name: String(req.body.params?.clientInfo?.name || 'MCP 客户端').slice(0,100), at: Date.now() });
-  const server = new McpServer({ name: 'NexusMCP Studio', version: '1.4.0' }, { capabilities:{tools:{}}, instructions: (policy.prompt || instructions)+'\n\n'+clientReplyRule });
+  const server = new McpServer({ name: 'NexusMCP Studio', version: '1.4.1' }, { capabilities:{tools:{}}, instructions: (policy.prompt || instructions)+'\n\n'+clientReplyRule });
   server.server.setRequestHandler(ListToolsRequestSchema, async()=>({tools:[...localManifest.map(({readOnly,...tool})=>tool),...extensionConfiguration().tools.map(({name,description,inputSchema,annotations})=>({name,description,inputSchema,annotations:{...annotations,readOnlyHint:false,destructiveHint:true}}))]}));
   server.server.setRequestHandler(CallToolRequestSchema, async({params})=>invokeTool(params.name,params.arguments));
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
@@ -97,7 +97,7 @@ process.on('message', async message => {
   else if (message?.type === 'extensions.configure') { configureExtensions(message.configuration); publishManifest(); }
   else if (message?.type === 'extension.result') resolveExtension(message);
   else if (message?.type === 'shared.revoke') {cancelApprovals(undefined,message.sharedAccessId);revokeSharedAccess(message.sharedAccessId);}
-  else if (message?.type === 'request.cancel') cancelApprovals(message.requestId);
+  else if (message?.type === 'request.cancel') {cancelApprovals(message.requestId);cancelToolRequest(message.requestId);}
   else if (message?.type === 'approval') resolveApproval(message.id, message.allowed);
   else if (message?.type === 'rpc') {
     try { const result = await inContext(message.origin || 'local', () => invokeTool(message.name,message.args),message.context||{}); process.send?.({ type: 'rpc.result', id: message.id, result }); }

@@ -1,6 +1,6 @@
 {
   "name": "nexusmcp-studio",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "workspaces": [
     "frontend"
@@ -40,7 +40,8 @@
     "@types/express": "^5.0.3",
     "@types/ws": "^8.18.1",
     "electron": "45.2.1",
-    "electron-builder": "26.18.0"
+    "electron-builder": "26.18.0",
+    "png-to-ico": "^3.0.1"
   },
   "main": "desktop/main.cjs",
   "description": "NexusMCP Studio 独立桌面客户端",

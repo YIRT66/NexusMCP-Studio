@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { systemRequest, disposeSystemReader } from './system-reader.mjs';
 import { startActivity } from './activity.mjs';
 import { defaultShell } from './shell.mjs';
+import {runCommand,cancelCommands} from './commands.mjs';
+import {workspaceRead,workspaceBatch} from './workspace.mjs';
 import { readText, readWhole, readMany, writeText, patchText, fileHash } from './files.mjs';
 import { authorize,callContext } from './policy.mjs';
 import { browserControl, closeBrowser } from './browser.mjs';
@@ -17,13 +19,14 @@ import {processMemory,injectLibrary} from './process-control.mjs';
 import { linuxDesktop, linuxCapabilities } from './linux-system.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const text = value => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] });
+const text = value => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }] });
 const image = data => ({ content: [{ type: 'image', data, mimeType: 'image/png' }] });
 const compact = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
 const sessions = new Map();
 const desktopChildren = new Set();
 export function revokeSharedAccess(accessId){for(const [id,session] of sessions)if(session.sharedAccessId===accessId){try{session.pty.kill();}catch{}sessions.delete(id);}}
-export async function disposeTools() { for (const s of sessions.values()) { try { s.pty.kill(); } catch {} } sessions.clear(); for(const c of desktopChildren) c.kill(); desktopChildren.clear(); disposeSystemReader(); await closeBrowser(); }
+export const cancelToolRequest=cancelCommands;
+export async function disposeTools() { cancelCommands(); for (const s of sessions.values()) { try { s.pty.kill(); } catch {} } sessions.clear(); for(const c of desktopChildren) c.kill(); desktopChildren.clear(); disposeSystemReader(); await closeBrowser(); }
 
 async function bridge(body) {
   if(process.env.NEXUS_PRIVILEGED_HOST==='1')return extensionRequest('browser.control','',body);
@@ -106,6 +109,7 @@ export function registerTools(server, audit = () => {}) {
     }
     return { ...compact(result), isError: Boolean(result.stopped) };
   });
+  tool('command_run','一次运行非交互命令并返回 stdout/stderr、真实退出码和耗时。支持 cwd、超时及输出上限；适合构建、测试和批处理，无需创建终端再输入再轮询。交互或持久任务用 terminal_*。',{command:z.string().min(1).max(100000),cwd:z.string().optional(),timeoutMs:z.number().int().min(100).max(120000).default(30000),maxOutput:z.number().int().min(1024).max(200000).default(64000)},async a=>{const result=await runCommand(a,callContext().requestId);return {...text(result),isError:result.exitCode!==0||result.timedOut||result.cancelled};});
   tool('terminal_create', '创建真正的 PTY 持久终端。支持 PowerShell、CMD、bash、WSL、Python REPL、SSH 等；shell 填可执行文件路径，args 为参数数组。', {
     shell: z.string().optional(), args: z.array(z.string()).max(100).optional(), cwd: z.string().optional(), env: z.record(z.string()).optional(), cols: z.number().int().min(20).max(500).default(120), rows: z.number().int().min(5).max(200).default(30),
   }, async a => {
@@ -138,6 +142,10 @@ export function registerTools(server, audit = () => {}) {
   tool('file_write', '原子写入 UTF-8 文件；expectedHash 可防止覆盖并发修改，返回 SHA-256。', { path: z.string(), content: z.string().max(2 * 1024 * 1024), expectedHash }, async a => text(await writeText(a.path,a.content,a.expectedHash)));
   tool('file_patch', '精准替换唯一片段，同文件修改串行执行。先读取最新内容；支持 expectedHash，返回 SHA-256。', { path: z.string(), oldText: z.string().min(1).max(2000000), newText: z.string().max(2000000), expectedHash }, async a => text(await patchText(a.path,[a],a.expectedHash)));
   tool('file_patch_many', '同一文件批量精确替换，只读写一次。按 edits 顺序匹配，任一步失败不写入；expectedHash 防止旧版本覆盖。', { path: z.string(), edits: z.array(z.object({oldText:z.string().min(1).max(200000),newText:z.string().max(200000)})).min(1).max(50), expectedHash }, async a => text(await patchText(a.path,a.edits,a.expectedHash)));
+  tool('workspace_read','一次读取整个项目的源码快照。自动遍历和跳过依赖、构建目录及二进制文件；返回目录路径、文本、版本摘要和 nextCursor。大项目沿 nextCursor 继续，无需逐个文件调用。',{path:z.string(),cursor:z.number().int().min(0).default(0),maxFiles:z.number().int().min(1).max(300).default(60),maxBytes:z.number().int().min(1024).max(2000000).default(512000),maxFileBytes:z.number().int().min(1024).max(128000).default(32000),maxDepth:z.number().int().min(0).max(30).default(15),includeHidden:z.boolean().default(false)},async a=>text(await workspaceRead({...a,...(callContext().origin==='browser'?{maxBytes:Math.min(a.maxBytes,12000),maxFiles:Math.min(a.maxFiles,20),maxFileBytes:Math.min(a.maxFileBytes,4000)}:callContext().origin==='api'?{maxBytes:Math.min(a.maxBytes,120000),maxFiles:Math.min(a.maxFiles,100)}:{})})),true);
+  tool('workspace_batch','一次提交多步文件任务：read/list/mkdir/write/patch，按顺序执行、默认遇错停止。共享一次工具审批，返回每步真实结果及文件增删行。已完成步骤不会自动回滚。',{steps:z.array(z.discriminatedUnion('action',[
+    z.object({action:z.literal('read'),path:z.string(),...range}),z.object({action:z.literal('list'),path:z.string()}),z.object({action:z.literal('mkdir'),path:z.string()}),z.object({action:z.literal('write'),path:z.string(),content:z.string().max(200000),expectedHash}),z.object({action:z.literal('patch'),path:z.string(),edits:z.array(z.object({oldText:z.string().min(1).max(100000),newText:z.string().max(100000)})).min(1).max(30),expectedHash})
+  ])).min(1).max(50),stopOnError:z.boolean().default(true)},async a=>{const result=await workspaceBatch(a);return {...text(result),isError:!result.ok};});
   tool('file_search', '按文件名搜索指定目录树。默认跳过 node_modules/.git，限制遍历数量避免全盘阻塞。返回部分结果和 truncated 标志。', { path: z.string(), query: z.string().min(1).max(300), maxResults: z.number().int().min(1).max(500).default(100), maxDepth: z.number().int().min(0).max(30).default(8) }, async a => {
     const matches = []; const query = a.query.toLowerCase(); let visited = 0, truncated = false, head = 0; const queue = [{ dir: path.resolve(a.path), depth: 0 }];
     while (head < queue.length && matches.length < a.maxResults && visited < 30000) { const {dir,depth} = queue[head++]; let entries; try { entries = await fs.readdir(dir, {withFileTypes:true}); } catch { continue; } for (const e of entries) { if (++visited > 30000) { truncated = true; break; } const target = path.join(dir,e.name); if(e.name.toLowerCase().includes(query)) matches.push({path:target,directory:e.isDirectory()}); if(matches.length >= a.maxResults) { truncated = true; break; } if(e.isDirectory() && !['.git','node_modules'].includes(e.name) && depth < a.maxDepth) queue.push({dir:target,depth:depth+1}); } }

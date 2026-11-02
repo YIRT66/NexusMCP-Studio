@@ -22,6 +22,7 @@ await fs.cp(path.join(root,'preserved-mcp'),path.join(target,'preserved-mcp'),{r
  const rel=path.relative(path.join(root,'preserved-mcp'),source).replaceAll('\\','/');
  return !/^(data|test|tests|\.git)(\/|$)/.test(rel)&&!['PUBLIC-MCP-URL.txt','.gitignore'].includes(rel);
 }});
+await fs.cp(path.join(root,'examples'),path.join(target,'examples'),{recursive:true});
 await fs.mkdir(path.join(target,'runtime'),{recursive:true});
 await fs.cp(path.join(root,'browser-plugin'),path.join(target,'browser-plugin'),{recursive:true});
 await fs.cp(path.join(root,'frontend/dist'),path.join(target,'frontend/dist'),{recursive:true});

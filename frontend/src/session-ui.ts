@@ -2,7 +2,7 @@ import {create} from 'zustand';
 import type {Message,ToolCall} from './types';
 export type PermissionMode='readonly'|'workspace'|'full';
 export interface Workspace {id:string;name:string;path:string;collapsed?:boolean}
-export interface ChatSession {id:string;workspaceId:string;title:string;customTitle?:boolean;updatedAt:number;messages:Message[];calls:ToolCall[];timeline:{id:string;kind:'message'|'tool';at:number}[];goal:string;planning:boolean;permission:PermissionMode;modelMode:'mcp'|'api';apiProfileId:string;mcpProvider:string;draft:string}
+export interface ChatSession {pinned?:boolean;id:string;workspaceId:string;title:string;customTitle?:boolean;updatedAt:number;messages:Message[];calls:ToolCall[];timeline:{id:string;kind:'message'|'tool';at:number}[];goal:string;planning:boolean;permission:PermissionMode;modelMode:'mcp'|'api';apiProfileId:string;mcpProvider:string;draft:string}
 interface SessionUI {
   workspaces:Workspace[];sessions:ChatSession[];activeWorkspaceId:string;activeSessionId:string;
   createSession:(workspaceId?:string)=>ChatSession;selectSession:(id:string)=>ChatSession|undefined;
@@ -52,6 +52,7 @@ export const useSessionUI=create<SessionUI>((set,get)=>({
 }));
 
 export async function chooseWorkspace(){
+  if(!window.nexusDesktop?.selectWorkspacePath){window.dispatchEvent(new Event('nexus:choose-workspace'));return null;}
   const path=await window.nexusDesktop?.selectWorkspacePath?.();
   if(path)useSessionUI.getState().addWorkspace(path);
   return path;

@@ -113,6 +113,7 @@ async function createWindow() {
   mainWindow = new BrowserWindow({
     ...bounds,
     title: 'NexusMCP Studio',
+    icon:path.join(root,'frontend','dist','icon.png'),
     backgroundColor: '#151517',
     show: false,
     autoHideMenuBar: true,
@@ -182,6 +183,7 @@ if (!app.requestSingleInstanceLock()) {
     logStartup('app:ready');
     await startRuntime();
     logStartup('runtime:ready',{url:runtimeUrl});
+    ipcMain.handle('desktop:reveal-path',async(event,target)=>{if(event.sender!==mainWindow?.webContents||typeof target!=='string'||!path.isAbsolute(target))throw new Error('路径无效');const resolved=await fs.promises.realpath(target);const stat=await fs.promises.stat(resolved);if(stat.isDirectory()){const error=await shell.openPath(resolved);if(error)throw new Error(error);}else shell.showItemInFolder(resolved);return true;});
     ipcMain.handle('desktop:get-runtime',event=>event.sender===mainWindow?.webContents?runtimeUrl:null);
     ipcMain.handle('desktop:open-dsh',async event=>{
       if(!mainWindow||event.sender!==mainWindow.webContents)throw new Error('无效窗口');

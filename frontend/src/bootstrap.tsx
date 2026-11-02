@@ -5,6 +5,7 @@ import {App} from './DesktopApp';
 import './styles.css';
 import './plain.css';
 import './desktop-shell.css';
+import './workspace-features.css';
 class UIErrorBoundary extends Component<{children:ReactNode},{error:string}> {
   state={error:''};
   static getDerivedStateFromError(error:Error){return {error:error.message};}

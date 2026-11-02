@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy,Suspense,useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronRight, Command, Folder, Grid2X2, Monitor, PanelLeft, Puzzle, Search, Settings, Shield, Square, TerminalSquare, Plus, MessageSquare, X, Plug, LoaderCircle } from 'lucide-react';
 import { connect, request, act } from './connection';
 import { useStudio } from './store';
 import { ConversationWorkbench } from './components/ConversationWorkbench';
 import {useSessionUI,chooseWorkspace} from './session-ui';
-import { LiveDesktop } from './components/LiveDesktop';
-import { CyberTerminal } from './components/CyberTerminal';
-import { SystemExplorer } from './components/SystemExplorer';
+import {UIExtensions} from './components/UIExtensions';
+import {PreviewHost} from './components/FilePreview';
+const LiveDesktop=lazy(()=>import('./components/LiveDesktop').then(module=>({default:module.LiveDesktop})));
+const CyberTerminal=lazy(()=>import('./components/CyberTerminal').then(module=>({default:module.CyberTerminal})));
+const SystemExplorer=lazy(()=>import('./components/SystemExplorer').then(module=>({default:module.SystemExplorer})));
 import { SettingsDialog } from './components/SettingsDialog';
 import { ExtensionManager } from './components/ExtensionManager';
 import {McpServiceDialog} from './components/McpServiceDialog';
@@ -29,6 +31,8 @@ export function App() {
   const ui=useSessionUI();
   useEffect(()=>{if(!s.connected)return;let active=true;void request<WebchatState>('/webchat/activate',{sessionId:ui.activeSessionId}).then(state=>{if(active)applyWebchatState(state);}).catch(error=>{if(active&&useStudio.getState().webchat.transport!=='extension')s.set({error:error.message});});return()=>{active=false;};},[ui.activeSessionId,s.connected,s.webchat.transport]);
   const [page, setPage] = useState<Page>('chat');
+  const visited=useRef(new Set<Page>());visited.current.add(page);
+  useEffect(()=>{const explore=()=>setPage('explorer');const terminal=()=>setPage('terminal');window.addEventListener('nexus:explore',explore);window.addEventListener('nexus:terminal',terminal);return()=>{window.removeEventListener('nexus:explore',explore);window.removeEventListener('nexus:terminal',terminal);};},[]);
   const [sidebar, setSidebar] = useState(()=>!matchMedia('(max-width: 700px)').matches);
   useEffect(()=>{const media=matchMedia('(max-width: 700px)');const update=()=>setSidebar(!media.matches);media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
   const [query, setQuery] = useState('');
@@ -73,7 +77,7 @@ export function App() {
   const openPlugins = () => {setSettingsTab('mcp');s.set({settingsOpen:true});};
   const moreActive = page !== 'chat' && page !== 'tools';
 
-  return <div className="plain-app client-app desktop-shell">
+  return <div className="plain-app client-app desktop-shell"><UIExtensions/><PreviewHost/>
     {import.meta.env.VITE_WEB_PREVIEW === 'true' && <div className="mobile-preview-banner" role="status">网页版预览 · 只展示界面，电脑控制及 MCP 功能不可用</div>}
     <header className="shell-titlebar">
       <button className="shell-sidebar-toggle" aria-label="切换侧边栏" title="切换侧边栏" aria-expanded={sidebar} onClick={() => setSidebar(!sidebar)}><PanelLeft size={16} /></button>
@@ -82,7 +86,7 @@ export function App() {
     <div className={`shell-layout ${sidebar ? '' : 'sidebar-collapsed'}`}>
       <div className="shell-sidebar-clip" ref={inertWhen(!sidebar||s.settingsOpen)}>
         <aside className="plain-sidebar shell-sidebar">
-          <button className="shell-brand" aria-label="NexusMCP 首页" onClick={() => navigate('chat')}><Command size={24} strokeWidth={1.8} /><strong>NexusMCP</strong><span>STUDIO</span></button>
+          <button className="shell-brand" aria-label="NexusMCP 首页" onClick={() => navigate('chat')}><img src={import.meta.env.BASE_URL+'icon.png'} alt="NexusMCP 图标" width={28} height={28}/><strong>NexusMCP</strong><span>STUDIO</span></button>
           <button className="new-chat" onClick={() => { if(s.phase!=='idle'){s.set({error:'请先停止当前任务。'});return;} ui.createSession();setNonce(n=>n+1);navigate('chat'); }}><Plus size={15} />新会话</button>
           <nav className="shell-primary-nav" aria-label="主导航">
             {([{ id: 'tools', icon: Puzzle, label: '插件', active: page === 'tools' }, { id: 'more', icon: Grid2X2, label: '更多', active: moreActive }] as const).map(({ id, icon: Icon, label, active }) =>
@@ -110,9 +114,9 @@ export function App() {
           </AnimatePresence>
         </div>
         <div className={`plain-view shell-chat-view ${page==='chat'?'current':''}`} ref={inertWhen(page!=='chat')}><ConversationWorkbench browserSuspended={page!=='chat'||mcpOpen} onOpenModel={openModel} onConnect={()=>setConnection(n=>n+1)}/></div>
-        <div className={`plain-view work-view ${page === 'desktop' ? 'current' : ''}`} ref={inertWhen(page!=='desktop')}><LiveDesktop active={page === 'desktop'} /></div>
-        <div className={`plain-view work-view ${page === 'terminal' ? 'current' : ''}`} ref={inertWhen(page!=='terminal')}><CyberTerminal /></div>
-        <div className={`plain-view work-view ${page === 'explorer' ? 'current' : ''}`} ref={inertWhen(page!=='explorer')}><SystemExplorer /></div>
+        <div className={`plain-view work-view ${page === 'desktop' ? 'current' : ''}`} ref={inertWhen(page!=='desktop')}><Suspense fallback={<p className="empty-view">正在打开桌面…</p>}>{visited.current.has('desktop')&&<LiveDesktop active={page === 'desktop'} />}</Suspense></div>
+        <div className={`plain-view work-view ${page === 'terminal' ? 'current' : ''}`} ref={inertWhen(page!=='terminal')}><Suspense fallback={<p className="empty-view">正在打开终端…</p>}>{visited.current.has('terminal')&&<CyberTerminal />}</Suspense></div>
+        <div className={`plain-view work-view ${page === 'explorer' ? 'current' : ''}`} ref={inertWhen(page!=='explorer')}><Suspense fallback={<p className="empty-view">正在打开文件…</p>}>{visited.current.has('explorer')&&<SystemExplorer />}</Suspense></div>
       </main>
     </div>
     <AnimatePresence>{s.settingsOpen && <SettingsDialog initialTab={settingsTab}/>}</AnimatePresence>

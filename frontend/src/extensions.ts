@@ -2,6 +2,7 @@ import {request} from './connection';
 
 export type ExtensionKind='plugin'|'skill'|'mcp';
 export interface ExtensionEntry {
+  studio?:{permissions:string[];frontend?:string;backend?:string;styles?:string};
   id:string;name:string;kind:ExtensionKind;description?:string;version?:string;
   enabled:boolean;status?:'installed'|'installing'|'error';error?:string;source?:string;
 }
