@@ -5,6 +5,7 @@ export class StudioHost {
   constructor(api){this.api=api;this.active=new Map();this.tools=new Map();this.hooks=new Map();}
   async activate(entry,base){
     if(!entry.studio)return;
+    base=await fs.realpath(base);
     await this.deactivate(entry.id);
     const disposers=[];const record={base,entry,disposers};this.active.set(entry.id,record);
     if(!entry.studio.backend)return;

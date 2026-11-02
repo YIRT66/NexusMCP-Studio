@@ -77,7 +77,7 @@ export function App() {
   const openPlugins = () => {setSettingsTab('mcp');s.set({settingsOpen:true});};
   const moreActive = page !== 'chat' && page !== 'tools';
 
-  return <div className="plain-app client-app desktop-shell"><UIExtensions/><PreviewHost/>
+  return <div className="plain-app client-app desktop-shell"><UIExtensions/><PreviewHost/>{s.preview&&<div className="preview-instance-banner">独立预览实例 · 示例对话与实际工具记录</div>}
     {import.meta.env.VITE_WEB_PREVIEW === 'true' && <div className="mobile-preview-banner" role="status">网页版预览 · 只展示界面，电脑控制及 MCP 功能不可用</div>}
     <header className="shell-titlebar">
       <button className="shell-sidebar-toggle" aria-label="切换侧边栏" title="切换侧边栏" aria-expanded={sidebar} onClick={() => setSidebar(!sidebar)}><PanelLeft size={16} /></button>
@@ -86,7 +86,7 @@ export function App() {
     <div className={`shell-layout ${sidebar ? '' : 'sidebar-collapsed'}`}>
       <div className="shell-sidebar-clip" ref={inertWhen(!sidebar||s.settingsOpen)}>
         <aside className="plain-sidebar shell-sidebar">
-          <button className="shell-brand" aria-label="NexusMCP 首页" onClick={() => navigate('chat')}><img src={import.meta.env.BASE_URL+'icon.png'} alt="NexusMCP 图标" width={28} height={28}/><strong>NexusMCP</strong><span>STUDIO</span></button>
+          <button className="shell-brand" aria-label="NexusMCP 首页" onClick={() => navigate('chat')}><img src={import.meta.env.BASE_URL+'icon.png'} alt="NexusMCP 图标" width={28} height={28}/><strong>NexusMCP</strong><span>v{import.meta.env.VITE_APP_VERSION}</span></button>
           <button className="new-chat" onClick={() => { if(s.phase!=='idle'){s.set({error:'请先停止当前任务。'});return;} ui.createSession();setNonce(n=>n+1);navigate('chat'); }}><Plus size={15} />新会话</button>
           <nav className="shell-primary-nav" aria-label="主导航">
             {([{ id: 'tools', icon: Puzzle, label: '插件', active: page === 'tools' }, { id: 'more', icon: Grid2X2, label: '更多', active: moreActive }] as const).map(({ id, icon: Icon, label, active }) =>

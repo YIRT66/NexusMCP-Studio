@@ -35,9 +35,11 @@ jobs:
             echo 'Tag and package version differ' >&2
             exit 1
           fi
-          mapfile -d '' files < <(find dist -maxdepth 1 -type f \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.tar.gz' -o -name '*.zip' \) -print0)
+          mkdir -p packages
+          while IFS= read -r -d '' artifact; do cp "$artifact" "packages/$(basename "$artifact")"; done < <(find dist -type f \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.tar.gz' -o -name '*.zip' \) -print0)
+          mapfile -d '' files < <(find packages -maxdepth 1 -type f \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.tar.gz' -o -name '*.zip' \) -print0)
           test "${#files[@]}" -ge 5
-          (cd dist && sha256sum *.exe *.AppImage *.deb *.tar.gz *.zip > SHA256SUMS.txt)
-          gh release create "$version" "${files[@]}" dist/SHA256SUMS.txt \
+          (cd packages && sha256sum *.exe *.AppImage *.deb *.tar.gz *.zip > SHA256SUMS.txt)
+          gh release create "$version" "${files[@]}" packages/SHA256SUMS.txt \
             --target "$GITHUB_SHA" --title "NexusMCP Studio ${version#v}" \
             --notes-file "docs/releases/${version#v}.md"

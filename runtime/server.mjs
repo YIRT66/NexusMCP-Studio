@@ -1,3 +1,4 @@
+import {appVersion} from '../preserved-mcp/version.mjs';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
@@ -18,6 +19,7 @@ import {browserControl,closeBrowser} from '../preserved-mcp/browser.mjs';
 import {spawnControlWorker} from './elevation.mjs';
 import {ensureCloudflared} from '../preserved-mcp/tunnel.mjs';
 import {readText} from '../preserved-mcp/files.mjs';
+import {BrowserInstaller} from './browser-installer.mjs';
 import {StudioHost} from './studio-host.mjs';
 import {ActivityJournal} from './activity-journal.mjs';
 import {BrowserTools} from './browser-tools.mjs';
@@ -75,7 +77,8 @@ try {
 } catch {}
 const app = express();
 app.disable('x-powered-by');
-const listener = app.listen(Number(process.env.NEXUS_PORT || 8765), '127.0.0.1');
+const listenHost=process.env.NEXUS_LISTEN_HOST==='0.0.0.0'?'0.0.0.0':'127.0.0.1';
+const listener = app.listen(Number(process.env.NEXUS_PORT || 8765), listenHost);
 await new Promise((resolve, reject) => { listener.once('listening', resolve); listener.once('error', reject); });
 const port = listener.address().port;
 const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
@@ -115,6 +118,8 @@ const extensions = new ExtensionManager(dataDir,(type,data)=>{
 const studioHost=new StudioHost({callTool:(name,args,context)=>rpc(name,args,'local',context),emit,readSettings:()=>({...settings}),updateSettings:body=>saveSettings(body)});
 extensions.studioHost=studioHost;
 await extensions.init();
+const browserInstaller=new BrowserInstaller(path.join(dataDir,'managed-browser'),{source:path.join(root,'browser-plugin'),bridge:()=>`ws://127.0.0.1:${port}/webchat/extension/${relay.token}`,connected:()=>!!relay.socket,open:data=>webCommand('open',data),publish:emit});
+async function installRecommendations(){for(const source of [{kind:'plugin',source:{type:'local',value:path.join(root,'examples','studio-delight')}}])if(!extensions.entries.some(e=>e.source.type===source.source.type&&e.source.value===source.source.value))await extensions.install(source);}
 function availableTools(){return [...tools.filter(t=>!t.extensionId),...extensions.configuration().tools.map(t=>({...t,readOnly:false}))];}
 function update(next) { state = { ...state, ...next }; emit('service.state', state); }
 function log(text) { for (let line of String(text).split(/\r?\n/)) { line = line.trim(); if (!line) continue; const entry = { id: randomUUID(), at: Date.now(), text: line.slice(0, 2500) }; logs.push(entry); logs = logs.slice(-300); emit('service.log', entry); } }
@@ -201,6 +206,8 @@ async function applySettings(body) {
   if (typeof body.autoCollapse === 'boolean') next.autoCollapse = body.autoCollapse;
   if (typeof body.frameRate === 'number') next.frameRate = Math.max(.2, Math.min(2, body.frameRate));
   if (['safe', 'overdrive'].includes(body.mode)) next.mode = body.mode;
+  if(typeof body.autoInstallPlugins==='boolean')next.autoInstallPlugins=body.autoInstallPlugins;
+  if(typeof body.autoInstallBrowser==='boolean')next.autoInstallBrowser=body.autoInstallBrowser;
   if(typeof body.elevated==='boolean')next.elevated=body.elevated;
   if(next.mode!=='overdrive')next.elevated=false;
   if (Array.isArray(body.disabled) && body.disabled.every(n => typeof n === 'string')) next.disabled = body.disabled.slice(0, 100);
@@ -219,10 +226,13 @@ async function applySettings(body) {
   return settings;
 }
 const route = callback => async (req, res, next) => { try { await callback(req, res); } catch (e) { next(e); } };
-app.get('/api/health', (_req,res)=>res.json({ok:true,service:'nexus-local-runtime',version:'1.4.1',mcp:state.phase}));
+app.get('/api/health', (_req,res)=>res.json({ok:true,service:'nexus-local-runtime',version:appVersion,mcp:state.phase}));
 app.get('/api/webchat',(_req,res)=>res.json(webState));
 app.get('/api/client/context',(_req,res)=>res.json(replies.context()));
 app.post('/api/client/requests',route(async(req,res)=>{if(state.phase!=='running')throw new Error('请先启动 MCP 服务');if(typeof req.body.text!=='string'||!req.body.text.trim()||req.body.text.length>100000)throw new Error('消息为空或过长');const pending=await replies.create({...req.body,provider:webState.provider});await replies.sent(pending);webState={...webState,busy:true,replyMode:'mcp',status:'正在等待模型执行与回复'};emit('webchat.state',webState);emit('agent.status',{phase:'executing'});res.status(201).json({requestId:pending.requestId,sessionId:pending.sessionId,replyMode:'mcp',tool:'client_reply'});}));
+app.get('/api/browser-extension/install',(_req,res)=>res.json(browserInstaller.state));
+app.post('/api/browser-extension/install',route(async(req,res)=>{if(isShared(req))throw new Error('请在运行软件的本机安装浏览器');webTransport='extension';settings.webchatTransport='extension';await saveSettings({autoInstallBrowser:true});res.status(202).json({accepted:true});void browserInstaller.install(req.body).catch(error=>log(error.message));}));
+app.post('/api/extensions/auto-install',route(async(req,res)=>{if(isShared(req))throw new Error('请在本机配置自动安装');await saveSettings({autoInstallPlugins:req.body.enabled!==false});if(req.body.enabled!==false)await installRecommendations();res.json({enabled:settings.autoInstallPlugins,items:extensions.list()});}));
 app.get('/api/webchat/bridge',(_req,res)=>res.json({url:`ws://127.0.0.1:${port}/webchat/extension/${relay.token}`,connected:!!relay.socket,transport:webTransport}));
 app.post('/api/webchat/transport',route(async(req,res)=>{if(webState.busy)throw new Error('请先停止当前回复再切换浏览器');if(!['extension','embedded'].includes(req.body.transport))throw new Error('浏览器类型无效');webTransport=req.body.transport;settings.webchatTransport=webTransport;await fs.writeFile(configFile,JSON.stringify(settings,null,2));webState=webTransport==='extension'?relay.state:{provider:'chatgpt',providers:[],status:'打开内置浏览器并登录',busy:false,transport:'embedded'};emit('webchat.state',webState);res.json(webState);}));
 app.post('/api/webchat/activate',route(async(req,res)=>(replies.activeSessionId=req.body.sessionId,res.json(await webCommand('activate',req.body)))));
@@ -232,7 +242,7 @@ app.post('/api/webchat/stop',route(async(_req,res)=>{if(child?.connected)for(con
 app.get('/api/models',(_req,res)=>res.json((webState.providers||[]).map(p=>({id:p.id,name:p.name}))));
 app.post('/api/models/select',route(async(req,res)=>{const result=await webCommand('open',{provider:req.body.model});res.json({model:result.provider});}));
 app.post('/api/permissions',route(async(req,res)=>{if(!['readonly','workspace','full'].includes(req.body.mode))throw new Error('权限模式无效');await saveSettings({mode:req.body.mode==='full'?'overdrive':'safe',elevated:req.body.mode==='full'});res.json({mode:req.body.mode,privilege:state.privilege||'user',note:'远程读取直接执行，修改操作在安全模式逐次审批；工作区范围不作为操作系统沙盒'});}));
-app.get('/api/bootstrap', (_req, res) => res.json({ platform: process.platform, terminalShells: Object.keys(platform.terminalShells()), mode: settings.mode, remote:isShared(_req),publicAccess:isShared(_req)?undefined:publicAccess.snapshot(),dsh:isShared(_req)?{installed:false,running:false,phase:'local-only',version:'',url:'',error:'',progress:''}:dsh.snapshot(),apiModels:apiModels.list(),apiChats:apiModels.states, settings, tools: manifest(availableTools()), servers: extensions.list().filter(e=>e.kind==='mcp').map(e=>({id:e.id,name:e.name,url:e.source,connected:e.connected,tools:e.toolCount})), webchat:webState,clientReplies:replies.messages(),extensions:extensions.list(),phase:webState.busy?'executing':'idle', service: state, calls, logs, approvals, history, terminalId: terminal }));
+app.get('/api/bootstrap', (_req, res) => res.json({ preview:process.env.NEXUS_PREVIEW_MODE==='1'?{sessionId:'nexus-preview',workspace:'/app/demo'}:undefined,browserInstall:browserInstaller.state,platform: process.platform, terminalShells: Object.keys(platform.terminalShells()), mode: settings.mode, remote:isShared(_req),publicAccess:isShared(_req)?undefined:publicAccess.snapshot(),dsh:isShared(_req)?{installed:false,running:false,phase:'local-only',version:'',url:'',error:'',progress:''}:dsh.snapshot(),apiModels:apiModels.list(),apiChats:apiModels.states, settings, tools: manifest(availableTools()), servers: extensions.list().filter(e=>e.kind==='mcp').map(e=>({id:e.id,name:e.name,url:e.source,connected:e.connected,tools:e.toolCount})), webchat:webState,clientReplies:replies.messages(),extensions:extensions.list(),phase:webState.busy?'executing':'idle', service: state, calls, logs, approvals, history, terminalId: terminal }));
 app.get('/api/public-access',(_req,res)=>res.json(publicAccess.snapshot()));
 app.post('/api/public-access/start',route(async(_req,res)=>{res.status(202).json({accepted:true});void publicAccess.start().catch(error=>log('公网入口：'+error.message));}));
 app.post('/api/public-access/stop',route(async(_req,res)=>{await publicAccess.stop();res.json(publicAccess.snapshot());}));
@@ -247,7 +257,7 @@ app.post('/api/model-profiles',route(async(req,res)=>res.status(201).json(await 
 app.delete('/api/model-profiles/:id',route(async(req,res)=>{await apiModels.remove(req.params.id);res.status(204).end();}));
 app.post('/api/chat/send',route(async(req,res)=>res.status(202).json(await apiModels.start({...req.body,...sharedContext(req)}))));
 app.post('/api/chat/stop',route(async(req,res)=>{await apiModels.stop(req.body.sessionId);res.json({ok:true});}));
-app.get('/api/extensions/:id/assets/*resource',route(async(req,res)=>{if(isShared(req))return res.status(403).end();const entry=extensions.get(req.params.id);const relative=Array.isArray(req.params.resource)?req.params.resource.join('/') : req.params.resource;res.sendFile(await studioHost.asset(entry,relative));}));
+app.get('/api/extensions/:id/assets/*resource',route(async(req,res)=>{const entry=extensions.get(req.params.id);const relative=Array.isArray(req.params.resource)?req.params.resource.join('/') : req.params.resource;res.sendFile(await studioHost.asset(entry,relative));}));
 app.post('/api/extensions/example',route(async(req,res)=>{if(isShared(req))return res.status(403).end();res.status(202).json(await extensions.install({kind:'plugin',source:{type:'local',value:path.join(root,'examples','studio-delight')}}));}));
 app.get('/api/extensions',(_req,res)=>res.json({items:extensions.list()}));
 app.post('/api/extensions/install',route(async(req,res)=>res.status(202).json(await extensions.install(req.body))));
@@ -319,11 +329,13 @@ const screenTimer = setInterval(async () => {
 let previous = os.cpus().map(c => c.times);
 const metricsTimer = setInterval(() => { const next = os.cpus().map(c => c.times); let total = 0, idle = 0; next.forEach((t, i) => { idle += t.idle - (previous[i]?.idle || 0); for (const k in t) total += t[k] - (previous[i]?.[k] || 0); }); previous = next; emit('telemetry', { cpu: total ? (1-idle/total)*100 : 0, memory: (1-os.freemem()/os.totalmem())*100 }); }, 2000);
 let closing = false;
-async function shutdown() { if (closing) return; closing = true; clearInterval(streamTimer); clearInterval(screenTimer); clearInterval(metricsTimer); relay.close(); await publicAccess.stop(); await dsh.dispose(); await stop(); await extensions.dispose(); await activityJournal.flush(); for (const ws of wss.clients) ws.terminate(); wss.close(); listener.closeAllConnections(); listener.close(() => process.exit()); }
+async function shutdown() { if (closing) return; closing = true; clearInterval(streamTimer); clearInterval(screenTimer); clearInterval(metricsTimer); relay.close(); await publicAccess.stop(); await dsh.dispose(); await stop(); await browserInstaller.dispose();await extensions.dispose(); await activityJournal.flush(); for (const ws of wss.clients) ws.terminate(); wss.close(); listener.closeAllConnections(); listener.close(() => process.exit()); }
 process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown);
 console.log(`NexusMCP Studio 控制台：http://127.0.0.1:${port}`);
 console.log('MCP 默认停止。请在控制台点击“启动 MCP”。');
 process.send?.({ type: 'runtime.ready', port, url: `http://127.0.0.1:${port}`, dataDir });
 process.on('message', message => { if(message?.type==='runtime.allow-origin')allowDevOrigin(message.origin);else if (message?.type === 'shutdown') void shutdown();else if(message?.type==='webchat.result'){const p=webRequests.get(message.id);if(p){clearTimeout(p.timer);webRequests.delete(message.id);message.error?p.reject(new Error(message.error)):p.resolve(message.result)}}else if(message?.type==='webchat.event'&&webTransport==='embedded'){receiveWebEvent(message.event.type,{...message.event.data,...(message.event.type==='webchat.state'?{transport:'embedded'}:{})});} });
+if(settings.autoInstallPlugins)void installRecommendations().catch(error=>log(error.message));
+if(settings.autoInstallBrowser)void browserInstaller.install({sessionId:replies.activeSessionId||'default',provider:webState.provider}).catch(error=>log(error.message));
 if (process.send) process.once('disconnect', () => void shutdown());
 if (process.env.NEXUS_OPEN_BROWSER === '1' && process.platform === 'win32') spawn('rundll32.exe', ['url.dll,FileProtocolHandler', `http://127.0.0.1:${port}`], { windowsHide: true, stdio: 'ignore' });

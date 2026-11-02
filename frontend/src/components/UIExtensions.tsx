@@ -6,7 +6,7 @@ import {componentRenderers,notifyComponents} from '../studio-ui';
 export function UIExtensions(){
   const extensions=useStudio(s=>s.extensions);const remote=useStudio(s=>s.remote);
   useEffect(()=>{
-    if(remote)return;let disposed=false;const cleanups:(()=>void)[]=[];
+    let disposed=false;const cleanups:(()=>void)[]=[];
     for(const entry of extensions.filter(e=>e.enabled&&e.status==='installed'&&e.studio))void(async()=>{
       const base='/api/extensions/'+entry.id+'/assets/';
       const local:(()=>void)[]=[];

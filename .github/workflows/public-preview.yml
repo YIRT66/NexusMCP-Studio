@@ -1,0 +1,55 @@
+name: Temporary public preview
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: RSA public key (DER base64) for the private preview link
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: nexus-public-preview
+  cancel-in-progress: true
+jobs:
+  preview:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --prefix preserved-mcp --no-audit --no-fund
+      - run: npm run build
+      - run: npm run prepare:runtime
+      - name: Start isolated preview instance
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="$RUNNER_TEMP/nexus-preview"
+          mkdir -p "$stage/app" "$stage/data/home"
+          tar --exclude=.git --exclude=release --exclude=output -cf - . | tar -xf - -C "$stage/app"
+          docker run -d --name nexus-preview --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges \
+            -p 127.0.0.1:8765:8765 -v "$stage/app:/app" -v "$stage/data:/data" -w /app \
+            -e HOME=/data/home -e NEXUS_DATA_DIR=/data -e NEXUS_PORT=8765 -e NEXUS_LISTEN_HOST=0.0.0.0 \
+            -e MCP_NO_TUNNEL=1 -e NEXUS_BROWSER_HEADLESS=1 -e NEXUS_PREVIEW_MODE=1 \
+            -e CLOUDFLARED_PATH=/app/preserved-mcp/bin/cloudflared \
+            node:24-bookworm node runtime/server.mjs
+      - name: Open preview and encrypt the access link
+        env:
+          PREVIEW_PUBLIC_KEY: ${{ inputs.public_key }}
+        run: node scripts/open-public-preview.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preview-link
+          path: preview-link.enc
+          retention-days: 1
+      - name: Keep preview available for one hour
+        run: for minute in $(seq 1 60); do sleep 60; done
+      - name: Stop preview
+        if: always()
+        run: docker rm -f nexus-preview || true

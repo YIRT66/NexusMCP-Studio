@@ -109,7 +109,7 @@ export class ExtensionManager{
  async readSkill(id,relative){
   const match=String(id).match(/^([a-f0-9-]{36}):(\d+)$/);if(!match)throw new Error('技能 ID 无效');const entry=this.get(match[1]);if(!entry.enabled||entry.status!=='installed')throw new Error('技能未启用');const skill=entry.skills?.[Number(match[2])];if(!skill)throw new Error('技能不存在');
   const base=within(within(path.join(this.directory,'packages'),entry.id),entry.root||'.');const skillFile=within(base,skill.relative);const target=relative?within(path.dirname(skillFile),relative):skillFile;
-  const real=await fs.realpath(target);within(base,real);if((await fs.stat(real)).size>2*1024*1024)throw new Error('技能资源文件超过 2 MB');return {id,name:skill.name,path:real,content:await fs.readFile(real,'utf8')};
+  const real=await fs.realpath(target);within(await fs.realpath(base),real);if((await fs.stat(real)).size>2*1024*1024)throw new Error('技能资源文件超过 2 MB');return {id,name:skill.name,path:real,content:await fs.readFile(real,'utf8')};
  }
  async call(name,args){if(this.studioHost?.tools.has(name))return this.studioHost.call(name,args);const tool=this.toolManifest().find(t=>t.name===name);if(!tool)throw new Error('扩展工具未启用或连接已断开');const connection=this.connections.get(tool.connection);return connection.client.callTool({name:tool.originalName,arguments:args},undefined,{timeout:110000});}
  async suspend(){this.suspended=true;for(const e of this.entries)this.generations.set(e.id,(this.generations.get(e.id)||0)+1);await Promise.allSettled([...this.entries].map(e=>this.closeConnections(e.id)));await Promise.allSettled([...this.activations.values()]);for(const e of this.entries)if(e.enabled&&!this.jobs.has(e.id)&&e.status==='installing')e.status='installed';await this.changed();}

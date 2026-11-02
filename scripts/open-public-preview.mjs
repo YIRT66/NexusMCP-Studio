@@ -1,0 +1,21 @@
+import {publicEncrypt,createPublicKey} from 'node:crypto';
+import {writeFile} from 'node:fs/promises';
+const base='http://127.0.0.1:8765/api';
+const api=async(route,body)=>{const response=await fetch(base+route,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});const value=await response.json();if(!response.ok)throw new Error(value.error||response.statusText);return value;};
+async function until(callback,attempts=120){for(let i=0;i<attempts;i++){try{const value=await callback();if(value)return value;}catch{}await new Promise(resolve=>setTimeout(resolve,1000));}throw new Error('预览实例启动超时');}
+await until(async()=>await api('/health'));
+await api('/service/start',{});await until(async()=>(await api('/bootstrap')).service.phase==='running');
+const sessionId='nexus-preview';
+const request=await api('/client/requests',{sessionId,text:'展示新版：批处理、文件差异和聊天组件（预览示例）'});
+const call=async(name,args={})=>{const result=await api('/tools/call',{name,args});if(result.isError)throw new Error(result.content?.[0]?.text||'预览初始化工具失败');return JSON.parse(result.content[0].text);};
+const system=await call('system_read',{section:'overview'});
+await call('workspace_batch',{steps:[{action:'mkdir',path:'/app/demo'},{action:'write',path:'/app/demo/README.md',content:'# 新版工作区预览\n\n可在文件预览器中打开。\n'},{action:'patch',path:'/app/demo/README.md',edits:[{oldText:'可在文件预览器中打开。',newText:'支持 Markdown、代码和图片预览。\n支持真实增删行统计。'}]}]});
+const ui=value=>'```nexus-ui\n'+JSON.stringify(value)+'\n```';
+const answer=['这是 **新版功能预览**。下面内容由预览脚本生成，工具记录来自该独立实例的实际调用。',ui({type:'callout',tone:'info',title:'独立预览实例',text:'可以查看文件、执行记录、插件和设置。这里没有连接你的电脑。'}),ui({type:'metrics',title:'预览实例资源',items:[{label:'逻辑核心',value:system.cpu.logicalCores,unit:'核'},{label:'内存',value:Math.round(system.memory.totalBytes/1024**3),unit:'GB'}]}),ui({type:'steps',title:'已验证的功能',items:[{label:'一次性文件批处理',status:'done'},{label:'真实文件差异与预览',status:'done'},{label:'聊天组件与扩展',status:'done'}]}),'| 功能 | 状态 |\n| --- | --- |\n| 项目快照 / 批处理 | 可使用 |\n| Markdown / 文件预览 | 可使用 |\n| 模型聊天 | 可在设置中配置 API |',ui({type:'files',items:[{path:'/app/demo/README.md',label:'打开示例 Markdown 文件'}]}),ui({type:'tabs',items:[{title:'效率',text:'workspace_read、workspace_batch、command_run 减少连续工具往返。'},{title:'界面',text:'支持表格、步骤、指标、文件卡片与扩展自定义组件。'}]})].join('\n\n');
+await call('client_reply',{requestId:request.requestId,sessionId,text:answer,done:true});
+await api('/extensions/example',{});
+await api('/public-access/start',{});
+const state=await until(async()=>{const value=await api('/public-access');if(value.phase==='error')throw new Error(value.error);return value.phase==='running'?value:null;});
+const key=createPublicKey({key:Buffer.from(process.env.PREVIEW_PUBLIC_KEY,'base64'),format:'der',type:'spki'});
+await writeFile('preview-link.enc',publicEncrypt({key,oaepHash:'sha256'},Buffer.from(JSON.stringify({url:state.url,expiresAt:new Date(Date.now()+3600000).toISOString()}))));
+console.log('预览实例已启动；访问链接已加密保存。');

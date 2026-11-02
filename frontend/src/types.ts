@@ -1,7 +1,7 @@
 export type Mode = 'safe' | 'overdrive';
 export type View = 'desktop' | 'terminal' | 'explorer';
 export type Phase = 'idle' | 'thinking' | 'executing' | 'stopping';
-export interface Settings {elevated?:boolean;provider:string;model:string;baseUrl:string;apiKey:string;frameRate:number;theme:'dark'|'light'|'system';fontSize:number;detail:'standard'|'expanded';autoCollapse:boolean;mode:Mode;disabled:string[];prompt:string}
+export interface Settings {autoInstallBrowser?:boolean;autoInstallPlugins?:boolean;elevated?:boolean;provider:string;model:string;baseUrl:string;apiKey:string;frameRate:number;theme:'dark'|'light'|'system';fontSize:number;detail:'standard'|'expanded';autoCollapse:boolean;mode:Mode;disabled:string[];prompt:string}
 export interface ServiceState {privilege?:'root'|'user';phase:'stopped'|'starting'|'running'|'stopping'|'error';url:string;localUrl:string;error:string;lastClient:string;clientAt:number;startedAt:number;localOnly:boolean}
 export interface ServiceLog {id:string;at:number;text:string}
 export interface HistoryEntry {id:string;startedAt:number;label:string}

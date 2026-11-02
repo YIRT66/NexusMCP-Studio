@@ -11,7 +11,7 @@
   },
   "scripts": {
     "dev": "node scripts/desktop.mjs --dev",
-    "build": "npm --workspace frontend run build",
+    "build": "node scripts/sync-version.mjs && npm --workspace frontend run build",
     "typecheck": "npm --workspace frontend run typecheck",
     "preview": "npm --workspace frontend run preview",
     "mcp:start": "node preserved-mcp/server.mjs",
@@ -27,7 +27,8 @@
     "dist:linux": "npm run typecheck && npm run build && npm run build:service && electron-builder --linux AppImage deb --x64 --publish=never",
     "test": "node --test --test-concurrency=1 runtime/*.test.mjs",
     "test:mcp": "npm --prefix preserved-mcp test",
-    "build:browser-extension": "node scripts/package-browser-extension.mjs"
+    "build:browser-extension": "node scripts/sync-version.mjs && node scripts/package-browser-extension.mjs",
+    "version:sync": "node scripts/sync-version.mjs"
   },
   "dependencies": {
     "express": "5.1.0",

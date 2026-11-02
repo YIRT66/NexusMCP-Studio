@@ -1,3 +1,4 @@
+if (typeof importScripts === 'function') { try { importScripts('managed-config.js'); } catch {} }
 if (typeof importScripts === 'function') importScripts('tool-protocol.js');
 if (typeof importScripts === 'function') importScripts('turn-tracker.js');
 if (typeof importScripts === 'function') importScripts('debug-controller.js');
@@ -79,7 +80,13 @@ async function command(operation, data = {}) {
   }
   if (operation === 'open') return open(data);
   if (operation === 'reply.received') {
-    if (job?.requestId === data.requestId) { job = null; status = data.source === 'browser' ? '网页回复已同步' : 'MCP 回复已接收'; event('agent.status', { phase: 'idle' }); await save(); changed(); }
+    if (job?.requestId === data.requestId) {
+      job = null;
+      status = data.source === 'browser' ? '网页回复已同步' : 'MCP 回复已接收';
+      // The final answer has reached the program; stop redundant webpage output.
+      if(data.source!=='browser')try{const snapshot=await inspect('status');if(snapshot.busy){const stopped=await inspect('stop');pageBusy=!!stopped.busy&&!stopped.stopped;}}catch{status='程序已收到回复，请检查网页是否仍在生成';}
+      event('agent.status', { phase: 'idle' }); await save(); changed();
+    }
     return { ok: true };
   }
   if (operation === 'send') {
@@ -90,7 +97,7 @@ async function command(operation, data = {}) {
     if (!data.requestId || data.replyVia !== 'mcp') throw new Error('请更新客户端，消息必须带有回复请求标识');
     const before = await inspect('status'); if (before.busy) throw new Error('网页还在生成回复，请等待'); if (!before.ready) throw new Error('请先完成网页登录或重新绑定当前聊天窗口');
     let prompt = data.text;
-    if(data.instructions)prompt+='\n\n【NexusMCP 工作方式】\n'+String(data.instructions).slice(0,20000);
+    if(data.toolBridge&&data.instructions)prompt+='\n\n【NexusMCP 工作方式】\n'+String(data.instructions).slice(0,20000);
     if (data.goal) prompt = '当前任务目标：' + String(data.goal).slice(0, 10000) + '\n\n' + prompt;
     if (data.planning) prompt = '请先给出计划，等待确认后执行。\n\n' + prompt;
     const toolBridge = data.toolBridge === true;
@@ -169,7 +176,7 @@ chrome.tabs.onRemoved?.addListener(id => { for (const binding of Object.values(b
 chrome.runtime.onStartup?.addListener(async () => { for (const binding of Object.values(bindings)) binding.tabId = -1; await save(); });
 let lastPoll=0;setInterval(()=>{if(job||Date.now()-lastPoll>2000){lastPoll=Date.now();void poll();}},350); setInterval(() => send({ type: 'ping' }), 20000);
 chrome.storage.local.get(['bindings', 'endpoint', 'current', 'sessionProviders', 'pendingJob']).then(saved => {
-  bindings = saved.bindings || {}; sessionProviders = saved.sessionProviders || {}; current = saved.current || current; endpoint = saved.endpoint || '';
+  bindings = saved.bindings || {}; sessionProviders = saved.sessionProviders || {}; current = saved.current || current; endpoint = globalThis.NEXUS_MANAGED_BRIDGE || saved.endpoint || '';
   if (saved.pendingJob && Date.now() - saved.pendingJob.started < 10 * 60 * 1000) { const value = saved.pendingJob; job = { ...value, sending: false, tracker: new globalThis.NexusTurnTracker({ ...value, startedAt: value.started }) }; }
   if (endpoint) connect(endpoint).catch(() => {});
 });

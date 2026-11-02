@@ -2,6 +2,8 @@ import {create} from 'zustand';
 import type {DshState,ApiModelProfile,ApiChatState,Settings,Mode,View,Phase,Tool,ToolCall,Message,Approval,Frame,ServerEntry,ServiceState,ServiceLog,HistoryEntry,WebchatState} from './types';
 import {useSessionUI} from './session-ui';
 interface State {
+ preview?:{sessionId:string;workspace:string};
+ browserInstall:{phase:string;progress:string;error?:string};
  extensions:import('./extensions').ExtensionEntry[];
  publicAccess:import('./types').PublicAccessState;remote:boolean;
  dsh:DshState;
@@ -14,7 +16,7 @@ interface State {
  terminalId:string|null;terminalVersion:number;terminalChunks:string[];set:(patch:Partial<State>)=>void;receive:(event:{type:string;data:any})=>void;
 }
 export const useStudio=create<State>((set,get)=>({
- extensions:[],
+ browserInstall:{phase:'idle',progress:''},extensions:[],
  publicAccess:{phase:'stopped',url:'',error:'',startedAt:0,connections:0},remote:false,
  dsh:{installed:false,running:false,phase:'uninstalled',version:'0.2.1-rc.5',error:'',progress:'',url:''},apiModels:[],apiChats:{},
  platform:'',terminalShells:['default'],
@@ -24,6 +26,7 @@ export const useStudio=create<State>((set,get)=>({
  service:{phase:'stopped',url:'',localUrl:'',error:'',lastClient:'',clientAt:0,startedAt:0,localOnly:false},
  tools:[],calls:[],logs:[],history:[],messages:[],approvals:[],servers:[],frame:null,cursor:null,metrics:null,error:'',terminalId:null,terminalVersion:0,terminalChunks:[],set,
  receive:({type,data})=>{
+  if(type==='browser-install.state'){set({browserInstall:data});return;}
   if(type==='extensions.changed'){set({extensions:data});return;}
   if(type==='public-access.state'){set({publicAccess:data});return;}
   if(type==='dsh.state'){set({dsh:data});return;}

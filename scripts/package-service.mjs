@@ -18,6 +18,7 @@ for(const file of required)await fs.access(path.join(root,'preserved-mcp',file))
 // Rebuild only this validated generated directory; stale links must not point back into source.
 await fs.rm(target,{recursive:true,force:true});
 await fs.mkdir(target,{recursive:true});
+await fs.copyFile(path.join(root,'package.json'),path.join(target,'package.json'));
 await fs.cp(path.join(root,'preserved-mcp'),path.join(target,'preserved-mcp'),{recursive:true,verbatimSymlinks:true,filter:source=>{
  const rel=path.relative(path.join(root,'preserved-mcp'),source).replaceAll('\\','/');
  return !/^(data|test|tests|\.git)(\/|$)/.test(rel)&&!['PUBLIC-MCP-URL.txt','.gitignore'].includes(rel);

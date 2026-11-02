@@ -1,3 +1,4 @@
+import {appVersion} from './version.mjs';
 import express from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -34,7 +35,7 @@ app.use((req, res, next) => {
   if (req.headers.origin && !['https://chatgpt.com', publicOrigin].includes(req.headers.origin)) return res.status(403).json({ error: '无效来源' });
   next();
 });
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'nexus-computer-mcp', version: '1.4.1' }));
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'nexus-computer-mcp', version: appVersion }));
 app.use(express.json({ limit: '3mb' }));
 let concurrent = 0;
 let count = 0, bucket = Date.now();
@@ -59,7 +60,7 @@ app.post(endpoint, async (req, res) => {
   if (++count > 600 || concurrent >= 8) return res.status(429).json({ error: '请求过多，请稍后重试' });
   concurrent++;
   if (req.body?.method === 'initialize') process.send?.({ type: 'client', name: String(req.body.params?.clientInfo?.name || 'MCP 客户端').slice(0,100), at: Date.now() });
-  const server = new McpServer({ name: 'NexusMCP Studio', version: '1.4.1' }, { capabilities:{tools:{}}, instructions: (policy.prompt || instructions)+'\n\n'+clientReplyRule });
+  const server = new McpServer({ name: 'NexusMCP Studio', version: appVersion }, { capabilities:{tools:{}}, instructions: (policy.prompt || instructions)+'\n\n'+clientReplyRule });
   server.server.setRequestHandler(ListToolsRequestSchema, async()=>({tools:[...localManifest.map(({readOnly,...tool})=>tool),...extensionConfiguration().tools.map(({name,description,inputSchema,annotations})=>({name,description,inputSchema,annotations:{...annotations,readOnlyHint:false,destructiveHint:true}}))]}));
   server.server.setRequestHandler(CallToolRequestSchema, async({params})=>invokeTool(params.name,params.arguments));
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
