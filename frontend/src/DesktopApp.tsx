@@ -78,10 +78,10 @@ export function App() {
   const openPlugins = () => {setSettingsTab('mcp');s.set({settingsOpen:true});};
   const moreActive = page !== 'chat' && page !== 'tools';
 
-  return <div className="plain-app client-app desktop-shell"><UIExtensions/><PreviewHost/>{s.preview&&<div className="preview-instance-banner">独立预览实例 · 示例对话与实际工具记录</div>}
-    {import.meta.env.VITE_WEB_PREVIEW === 'true' && <div className="mobile-preview-banner" role="status">网页版预览 · 只展示界面，电脑控制及 MCP 功能不可用</div>}
+  return <div className="plain-app client-app desktop-shell" data-native={!!window.nexusDesktop}><UIExtensions/><PreviewHost/>
     <header className="shell-titlebar">
       <button className="shell-sidebar-toggle" aria-label="切换侧边栏" title="切换侧边栏" aria-expanded={sidebar} onClick={() => setSidebar(!sidebar)}><PanelLeft size={16} /></button>
+      {(s.preview||import.meta.env.VITE_WEB_PREVIEW==='true')&&<span className="shell-preview-notice" title={s.preview?'独立预览实例 · 示例对话与实际工具记录':'网页版界面预览 · 电脑控制及 MCP 功能不可用'}>{s.preview?'独立预览 · 示例数据':'网页版界面预览'}</span>}
       <button className={'mcp-launch-trigger '+(s.service.phase==='running'?'running':'')} onClick={()=>setMcpOpen(true)} aria-label="启动 MCP 服务">{s.service.phase==='starting'?<LoaderCircle size={13} className="spin"/>:<Plug size={13}/>}<span>{s.service.phase==='running'?'MCP 服务已启动':s.service.phase==='starting'?'MCP 正在启动':'启动 MCP 服务'}</span></button>
     </header>
     <div className={`shell-layout ${sidebar ? '' : 'sidebar-collapsed'}`}>

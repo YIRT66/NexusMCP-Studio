@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { _electron } from 'playwright-core';
+import { assertModelMenu } from './verify-model-menu.mjs';
 
 const require = createRequire(import.meta.url);
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -50,6 +51,7 @@ try {
   assert.match(terminal.shell, /bash|zsh|\/sh$/);
   const output = path.join(root, 'output', 'linux-desktop');
   await fs.mkdir(output, { recursive: true });
+  await assertModelMenu(page,{screenshot:path.join(output,executable?'packaged-model-menu.png':'source-model-menu.png')});
   await page.screenshot({ path: path.join(output, executable ? 'packaged.png' : 'source.png') });
   await app.close(); app = undefined;
   await assert.rejects(fetch(url + '/api/health'));

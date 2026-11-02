@@ -103,12 +103,31 @@
 @media(max-width:560px){.desktop-shell{--shell-sidebar-width:64px}.shell-sidebar{padding:14px 8px}.shell-brand{justify-content:center;width:100%;padding:0}.shell-brand strong,.shell-brand>span,.shell-primary-nav button>span:not(.shell-nav-indicator){display:none}.shell-primary-nav button{justify-content:center}.shell-sidebar .new-chat{font-size:0}.shell-sidebar .new-chat svg{width:16px}.settings-dialog-body{grid-template-columns:49px minmax(0,1fr)}.settings-dialog-nav button{padding:11px;justify-content:center}.settings-dialog-nav button>span:not(.settings-tab-indicator){display:none}.settings-dialog-content{padding:0 13px 20px 8px}.settings-row{align-items:flex-start}.settings-row strong{font-size:12px}.settings-row p{font-size:11px}.settings-dialog select{max-width:120px}.settings-appearance button{min-height:75px;font-size:11px}.settings-appearance>div{gap:6px}}
 @media(prefers-reduced-motion:reduce){.desktop-shell *,.settings-modal-backdrop *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}.shell-main>.work-view.current{animation:none}}
 
-/* Static GitHub Pages preview: visible only when VITE_WEB_PREVIEW is enabled. */
-.mobile-preview-banner{position:fixed;z-index:999;top:8px;left:50%;transform:translateX(-50%);pointer-events:none;max-width:calc(100vw - 20px);width:max-content;padding:7px 12px;border-radius:999px;background:#242a30eb;border:1px solid #61768a;color:#fff;font:12px/1.45 "Microsoft YaHei",sans-serif;box-shadow:0 3px 20px #0004;text-align:center;white-space:normal}
-@media(max-width:560px){.mobile-preview-banner{top:auto;bottom:8px;font-size:10px;padding:5px 9px}}
 /* Shared across desktop and the authenticated web console. */
 .mobile-sidebar-scrim{display:none}.public-access-settings h3{display:flex;align-items:center;gap:8px}.public-access-settings .settings-row{align-items:flex-start;flex-wrap:wrap}.public-share-card{padding:0 0 12px}.public-share-actions{display:flex;gap:8px;flex-wrap:wrap}.public-share-card input{font-family:monospace}.desktop-shell{height:100dvh}.shell-titlebar{padding-top:env(safe-area-inset-top);height:calc(40px + env(safe-area-inset-top))}.shell-sidebar footer{padding-bottom:max(8px,env(safe-area-inset-bottom))}
 @media(max-width:700px){.shell-layout,.shell-layout.sidebar-collapsed{grid-template-columns:minmax(0,1fr)}.shell-sidebar-clip{position:fixed;top:calc(40px + env(safe-area-inset-top));bottom:0;left:0;width:min(280px,85vw);z-index:31;background:var(--bg);box-shadow:12px 0 40px #0003;transform:translateX(0);transition:transform .24s var(--shell-ease),opacity .2s}.sidebar-collapsed .shell-sidebar-clip{transform:translateX(-100%)}.mobile-sidebar-scrim{display:block;position:fixed;inset:40px 0 0;z-index:30;background:#0006;animation:shell-view-enter .2s var(--shell-ease)}.shell-main{grid-column:1;border-radius:0}.shell-titlebar{padding-right:8px}.shell-main .plain-topbar{padding:0 14px}.shell-more-page,.shell-plugins-page{padding:22px 18px}.settings-modal-backdrop{inset:0;padding:10px 8px calc(10px + env(safe-area-inset-bottom))}.settings-dialog{border-radius:16px;max-height:calc(100dvh - 20px)}.settings-dialog-body{display:flex;flex-direction:column}.settings-dialog-nav{flex-direction:row;overflow-x:auto;padding:4px 12px 12px;flex:none}.settings-dialog-nav button{padding:10px}.settings-dialog-nav button svg{display:none}.settings-dialog-content{padding:0 16px 24px}.settings-row{gap:12px}.settings-row .ui-select{max-width:150px}.settings-dialog-header{height:56px;padding:15px 16px}.settings-dialog-footer{padding:12px 16px}.settings-description{font-size:13px}.settings-field input{font-size:16px}.composer textarea{font-size:16px!important}.public-access-settings .shell-outline-button{min-height:42px}.shell-sidebar-toggle{touch-action:manipulation}}
 @media(prefers-reduced-motion:reduce){.desktop-shell *,.settings-modal-backdrop *{animation-duration:.001ms!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
 @media(max-width:700px){.mobile-sidebar-scrim{left:min(280px,85vw)}}
 @media(max-width:700px){.desktop-shell{--shell-sidebar-width:min(280px,85vw)}.desktop-shell .shell-sidebar{width:var(--shell-sidebar-width);padding:18px 14px 10px}.shell-brand{justify-content:flex-start;width:auto;gap:10px}.shell-brand strong{display:block}.shell-primary-nav button>span:not(.shell-nav-indicator){display:inline}.shell-sidebar .shell-primary-nav button{justify-content:flex-start;font-size:13px}.shell-sidebar .new-chat{font-size:13px}.shell-sidebar .session-heading{display:flex}.shell-sidebar .session-search,.shell-sidebar .session-list{display:block}.shell-sidebar footer>div,.shell-sidebar footer>button{display:block}.shell-sidebar footer{justify-content:flex-start}.settings-dialog-nav button{justify-content:flex-start}.settings-dialog-nav button>span:not(.settings-tab-indicator){display:inline}}
+
+/* Notices participate in the titlebar layout on both browser and native clients. */
+.desktop-shell[data-native=false] .shell-titlebar{padding-right:12px}
+.shell-titlebar{gap:8px;min-width:0}.shell-titlebar>.shell-sidebar-toggle,.shell-titlebar>.mcp-launch-trigger{flex:none;white-space:nowrap}
+.shell-preview-notice{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--muted);pointer-events:none}
+/* Keep existing installations of the bundled pet clear of the composer. */
+body .studio-work-pet{bottom:220px}
+body:has(.model-picker-menu,[role=menu],[role=listbox],[role=dialog]) .studio-work-pet{visibility:hidden;pointer-events:none}
+@media(max-width:1100px){
+ body .studio-work-pet{width:28px;height:28px;top:calc(6px + env(safe-area-inset-top))!important;right:12px!important;left:auto!important;bottom:auto!important;border-radius:8px}
+ body:has(.studio-work-pet) .desktop-shell[data-native=false] .shell-titlebar{padding-right:52px}
+ body:has(.studio-work-pet) .desktop-shell[data-native=true] .shell-titlebar{padding-right:190px}
+ body:has(.desktop-shell[data-native=true]) .studio-work-pet{right:150px!important}
+ body .studio-work-pet>span{top:36px;bottom:auto;max-width:calc(100vw - 24px);white-space:normal}
+ .session-composer-actions>div:first-child{flex:1;overflow:hidden}
+ .session-composer-actions .permission-control{min-width:0;max-width:100%}
+ .session-model-actions{max-width:60%;flex:none}
+ .session-model-actions .model-picker-trigger{min-width:0}
+}
+@media(max-width:360px){.session-composer-actions{padding-inline:6px;gap:4px}.session-composer-actions>div{gap:4px}.model-picker-trigger>small{display:none}.session-composer-actions .ui-select-trigger>span{max-width:70px}}
+
+.desktop-shell[data-native=true] .shell-titlebar{padding-right:150px}

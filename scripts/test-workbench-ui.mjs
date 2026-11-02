@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright-core';
+import {assertModelMenu} from './verify-model-menu.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),output=path.join(root,'output/workbench-ui');await fs.mkdir(output,{recursive:true});
 const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-ui-'));
 const fixture=createServer(async(req,res)=>{
@@ -16,7 +17,7 @@ const fixture=createServer(async(req,res)=>{
  for(let i=0;i<answer.length;i+=12){packet({choices:[{delta:{content:answer.slice(i,i+12)}}]});await new Promise(resolve=>setTimeout(resolve,35));}packet({choices:[{delta:{},finish_reason:'stop'}]});}
  res.end('data: [DONE]\n\n');
 });await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
-const child=fork(path.join(root,'runtime/server.mjs'),[],{env:{...process.env,NEXUS_DATA_DIR:directory,NEXUS_PORT:'0',MCP_NO_TUNNEL:'1'},stdio:['ignore','pipe','pipe','ipc']});let diagnostic='',browser;
+const child=fork(path.join(root,'runtime/server.mjs'),[],{env:{...process.env,NEXUS_DATA_DIR:directory,NEXUS_PORT:'0',MCP_NO_TUNNEL:'1',NEXUS_PREVIEW_MODE:'1'},stdio:['ignore','pipe','pipe','ipc']});let diagnostic='',browser;
 child.stdout.on('data',v=>diagnostic+=v);child.stderr.on('data',v=>diagnostic+=v);
 try{
  const ready=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error(diagnostic)),15000);child.on('message',m=>{if(m.type==='runtime.ready'){clearTimeout(timer);resolve(m);}});child.once('error',reject);});
@@ -57,5 +58,26 @@ try{
  const example=await page.request.post(ready.url+'/api/extensions/example',{data:{}});assert.equal(example.status(),202);const entry=await example.json();await page.locator('.studio-work-pet').waitFor();await page.screenshot({path:path.join(output,'studio-extension-pet.png')});
  await page.request.patch(ready.url+'/api/extensions/'+entry.id,{data:{enabled:false}});await page.locator('.studio-work-pet').waitFor({state:'hidden'});await page.request.patch(ready.url+'/api/extensions/'+entry.id,{data:{enabled:true}});await page.locator('.studio-work-pet').waitFor();
  await page.getByRole('button',{name:'NexusMCP 首页',exact:true}).click();const active=await page.evaluate(()=>JSON.parse(localStorage.getItem('nexus.sessions')).activeSessionId);const client=await page.request.post(ready.url+'/api/client/requests',{data:{sessionId:active,text:'扩展自定义组件测试'}}).then(r=>r.json());await page.request.post(ready.url+'/api/tools/call',{data:{name:'client_reply',args:{requestId:client.requestId,sessionId:active,text:'```nexus-ui\n'+JSON.stringify({type:'workspace-note',title:'扩展组件已加载',text:'由已启用的全权 Studio 扩展注册。'})+'\n```',done:true}}});await page.getByText('扩展组件已加载',{exact:true}).waitFor();
+ // Reproduce the reported MCP menu with the actual installed pet and preview header.
+ for(const theme of ['dark','light']){
+  await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);
+  for(const [width,height] of [[1440,1000],[1024,768],[768,1024],[390,844],[320,568],[390,460]]){
+   await page.setViewportSize({width,height});
+   await page.waitForFunction(()=>innerWidth>700||document.querySelector('.shell-sidebar-toggle')?.getAttribute('aria-expanded')==='false');
+   await page.locator('.mobile-sidebar-scrim').waitFor({state:'hidden'});
+   const geometry=await page.evaluate(()=>{
+    const rect=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};};
+    return {notice:rect('.shell-preview-notice'),status:rect('.mcp-launch-trigger'),pet:rect('.studio-work-pet'),composer:rect('.session-composer'),send:rect('.session-send'),width:innerWidth,scroll:document.documentElement.scrollWidth};
+   });
+   const overlaps=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
+   assert.ok(!overlaps(geometry.notice,geometry.status),'预览说明不得覆盖 MCP 状态');
+   assert.ok(!overlaps(geometry.pet,geometry.composer),'桌宠不得覆盖输入区');
+   assert.ok(!overlaps(geometry.pet,geometry.status),'桌宠不得覆盖 MCP 状态');
+   assert.ok(geometry.send.right<=geometry.width&&geometry.send.left>=0,'发送按钮必须在屏幕内');
+   assert.ok(geometry.scroll<=geometry.width,'窄屏不得产生横向溢出');
+   await assertModelMenu(page,{screenshot:path.join(output,`mcp-model-menu-${width}x${height}-${theme}.png`)});
+   await page.locator('.studio-work-pet').waitFor({state:'visible'});
+  }
+ }
  assert.deepEqual(errors,[]);console.log('网页版实际 API 聊天、模型分组、时间轴搜索/折叠/详情/拖选、手机布局、公网设置、技能上传、文件预览/增删行、项目右键菜单和全权扩展组件/桌宠：通过。截图：'+output);
 }finally{await browser?.close();if(child.connected){child.send({type:'shutdown'});await new Promise(resolve=>{child.once('exit',resolve);setTimeout(()=>{child.kill();resolve();},8000).unref();});}fixture.closeAllConnections();await new Promise(resolve=>fixture.close(resolve));await fs.rm(directory,{recursive:true,force:true});}

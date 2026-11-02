@@ -37,11 +37,11 @@ export function AIBrowserPanel({suspended,onClose,onConnect,link,opening,pageErr
  useEffect(()=>{if(!external)void onOpenPage();},[session.id,external]);
  useEffect(()=>{
   const update=()=>{
-   if(!host.current||suspended||working||error||external||!entered||!present){window.nexusDesktop?.browserBounds(null);return;}
+   if(!host.current||suspended||working||error||external||!entered||!present||document.querySelector('[role="menu"],[role="listbox"],[role="dialog"]')){window.nexusDesktop?.browserBounds(null);return;}
    const r=host.current.getBoundingClientRect();window.nexusDesktop?.browserBounds({x:r.x,y:r.y,width:r.width,height:r.height});
   };
-  update();const observer=new ResizeObserver(update);if(host.current)observer.observe(host.current);window.addEventListener('resize',update);
-  return()=>{observer.disconnect();window.removeEventListener('resize',update);window.nexusDesktop?.browserBounds(null);};
+  update();const observer=new ResizeObserver(update);if(host.current)observer.observe(host.current);window.addEventListener('resize',update);const overlays=new MutationObserver(update);overlays.observe(document.body,{childList:true});
+  return()=>{overlays.disconnect();observer.disconnect();window.removeEventListener('resize',update);window.nexusDesktop?.browserBounds(null);};
  },[suspended,working,error,revision,s.webchat.provider,external,entered,present,consoleOpen]);
  async function transport(value:string){
   setError('');setLoading(true);
