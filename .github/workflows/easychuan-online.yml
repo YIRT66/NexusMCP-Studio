@@ -33,6 +33,10 @@ jobs:
         run: |
           mkdir -p transfer
           version="v$(node -p 'require("./package.json").version')"
+          for attempt in $(seq 1 120); do
+            if gh release view "$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then break; fi
+            sleep 10
+          done
           gh release download "$version" --repo "$GITHUB_REPOSITORY" --pattern NexusMCP-Studio-Setup.exe --pattern SHA256SUMS.txt --dir transfer
           cd transfer
           rg 'NexusMCP-Studio-Setup.exe$' SHA256SUMS.txt | sha256sum -c -
