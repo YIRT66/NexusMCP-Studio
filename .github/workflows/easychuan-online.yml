@@ -49,7 +49,7 @@ jobs:
         env:
           TRANSFER_PUBLIC_KEY: ${{ inputs.public_key }}
         run: |
-          node scripts/share-easychuan-online.mjs transfer/NexusMCP-Studio-Setup.exe > transfer/sender.log 2>&1 &
+          nohup node scripts/share-easychuan-online.mjs transfer/NexusMCP-Studio-Setup.exe > transfer/sender.log 2>&1 &
           echo $! > transfer/sender.pid
           for attempt in $(seq 1 360); do
             if test -f transfer/online-link.enc; then exit 0; fi
