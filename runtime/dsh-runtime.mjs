@@ -61,7 +61,7 @@ export class DshRuntime {
     await this.checkNode();await this.ensureShell(); await fs.mkdir(this.home, { recursive: true });
     const server = createServer(); await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); }); const port = server.address().port; await new Promise(resolve => server.close(resolve));
     this.update({ phase: 'starting', error: '', progress: '正在启动原生插件工作台', url: '' });
-    const child = spawn(this.node, [this.cli(), 'web', '--no-open', '--host', '127.0.0.1', '--port', String(port)], { cwd: this.directory, env: this.env(), detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }); this.child = child;
+    const child = spawn(this.node, [this.cli(), 'web', '--no-open', '--host', '127.0.0.1', '--port', String(port)], { cwd: this.directory, env: this.env(), detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }); this.child = child;
     return new Promise((resolve, reject) => {
       let output = '', settled = false; const timer = setTimeout(() => { child.kill(); reject(new Error('DSH 工作台启动超时')); }, 60000);
       const collect = chunk => {
@@ -78,7 +78,7 @@ export class DshRuntime {
     const child = this.child; if (!child) return; this.update({ phase: 'stopping' });
     await new Promise(resolve => {
       const timer = setTimeout(() => { if (process.platform === 'win32') { const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); killer.once('error', () => child.kill('SIGKILL')); } else { try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); } } }, 5000);
-      child.once('exit', () => { clearTimeout(timer); resolve(); }); child.kill('SIGTERM');
+      child.once('exit', () => { clearTimeout(timer); resolve(); }); if(child.connected)child.send({type:'nexus.shutdown'},error=>{if(error)child.kill('SIGTERM');});else child.kill('SIGTERM');
     });
   }
   async plugins() {
