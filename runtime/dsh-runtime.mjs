@@ -88,13 +88,25 @@ export class DshRuntime {
     if(!['add','remove'].includes(action)||typeof spec!=='string'||!spec.trim()||spec.length>1500||/^[\s-]/.test(spec)||/[\r\n\0]/.test(spec))throw new Error('请提供有效的插件来源');
     if(!this.info.installed)throw new Error('请先安装官方 DSH 引擎');if(this.operation)throw new Error('DSH 正在执行其他操作');
   }
+  async localPluginSpec(spec) {
+    if(process.platform!=='win32')return spec;
+    const source=spec.replace(/^(?:file|link):/,'');
+    if(!path.isAbsolute(source)||path.parse(source).root.toLowerCase()===path.parse(this.home).root.toLowerCase())return spec;
+    // pnpm directory dependencies across Windows drive letters resolve against
+    // the profile incorrectly. Stage the owned install copy on the data drive.
+    const directory=path.join(this.directory,'local-packages');await fs.mkdir(directory,{recursive:true});
+    const destination=path.join(directory,createHash('sha256').update(source.toLowerCase()).digest('hex').slice(0,20));
+    await fs.rm(destination,{recursive:true,force:true});
+    await fs.cp(source,destination,{recursive:true,filter:file=>!path.relative(source,file).split(path.sep).some(part=>['node_modules','.git'].includes(part))});
+    return 'file:'+destination;
+  }
   async plugin({ action, spec }) {
     this.validatePlugin({action,spec});
     if (!['add', 'remove'].includes(action) || typeof spec !== 'string' || !spec.trim() || spec.length > 1500 || /^[\s-]/.test(spec) || /[\r\n\0]/.test(spec)) throw new Error('请选择安装或移除，并提供有效的包名、Git URL 或本地路径');
     if (!this.info.installed) throw new Error('请先安装官方 DSH 引擎'); if (this.operation) throw new Error('DSH 正在执行其他操作');
     const running = !!this.child; await this.stop();
     this.operation = (async () => {
-      this.update({ phase: 'installing', error: '', progress: '正在更新 DSH 原生插件' }); await this.checkNode();
+      this.update({ phase: 'installing', error: '', progress: '正在更新 DSH 原生插件' }); await this.checkNode();spec=action==='add'?await this.localPluginSpec(spec):spec;
       await this.run(this.node, [this.cli(), 'plugin', '--profile', 'web', action, ...(action==='add'?['--ignore-scripts']:[]), '--', spec.trim()], { timeout: 600000 });
       this.update({ phase: 'stopped', progress: '' }); return this.plugins();
     })().catch(error => { this.update({ phase: 'error', error: error.message }); throw error; }).finally(() => { this.operation = null; });

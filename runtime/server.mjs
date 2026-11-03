@@ -145,7 +145,7 @@ await extensions.init();
 for(const plugin of await dsh.plugins()){
  if(['nexus-studio-shell','nexus-certified-whale'].includes(plugin.name)||extensions.entries.some(entry=>entry.dsh&&(entry.dsh.runtimeName||entry.name)===plugin.name))continue;
  let pkg={};try{pkg=JSON.parse(await fs.readFile(path.join(dsh.home,'profiles/web/node_modules',plugin.name,'package.json'),'utf8'));}catch{}
- const source=/^(file:|git\+|https?:|github:)/.test(plugin.version)?plugin.version:plugin.name+'@'+plugin.version;
+ const source=/^(file|link):/.test(plugin.version)?'file:'+path.resolve(dsh.home,'profiles/web',plugin.version.replace(/^(file|link):/,'')):/^(git\+|https?:|github:)/.test(plugin.version)?plugin.version:plugin.name+'@'+plugin.version;
  extensions.entries.push({id:randomUUID(),kind:'plugin',name:plugin.name,version:pkg.version||'',description:pkg.description||'',source:{type:'local',value:source},enabled:plugin.enabled,status:'installed',installedAt:Date.now(),servers:[],skills:[],dsh:{runtimeName:plugin.name,source,migrated:true}});
 }
 await extensions.save();
