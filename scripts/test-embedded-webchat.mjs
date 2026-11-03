@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import {_electron} from 'playwright-core';
+import {verifyBrowserFixture} from './verify-browser-fixture.mjs';
 import {startFixture} from '../runtime/webchat-fixture.mjs';
 const require=createRequire(import.meta.url),root=fileURLToPath(new URL('../',import.meta.url)),directory=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-embedded-')),fixture=await startFixture();
 const wrapper=createServer((_req,res)=>{res.setHeader('content-type','text/html');res.end(`<iframe src="${fixture.url}/chatgpt" style="width:900px;height:700px"></iframe>`);});await new Promise(resolve=>wrapper.listen(0,'127.0.0.1',resolve));
@@ -20,6 +21,7 @@ try{
  await api('/webchat/open',{provider:'chatgpt',sessionId,url:fixture.url+'/chatgpt'});
  const execute=code=>app.evaluate(({webContents},{origin,code})=>{const wc=webContents.getAllWebContents().find(wc=>wc.getURL().startsWith(origin));if(!wc)throw new Error('测试网页未打开');return wc.executeJavaScript(code);},{origin:fixture.url,code});
  await execute('document.getElementById("login").click()');await until(async()=>(await api('/webchat')).ready);
+ await verifyBrowserFixture(api);
  const first=await api('/webchat/send',{sessionId,text:'MCP 先完成，网页还在生成'});await until(async()=>await execute('!!window.sentMessages?.length'));
  const result=await api('/tools/call',{name:'client_reply',args:{requestId:first.requestId,sessionId,text:'MCP 已回传',done:true}});assert.ok(!result.isError);await until(async()=>{const state=await api('/webchat');return !state.busy&&state.pageBusy;});
  const blocked=await fetch(base+'/api/webchat/send',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sessionId,text:'不能重复提交'})});assert.equal(blocked.status,400);await api('/webchat/stop',{});await until(async()=>!(await api('/webchat')).pageBusy);
@@ -27,11 +29,13 @@ try{
  await debug('browser_console_read',{});assert.equal((await debug('browser_console_control',{operation:'execute',code:'window.nativeDebugFixture=42;console.log("native-console-fixture");nativeDebugFixture'})).value,42);assert.ok((await debug('browser_console_read',{})).entries.some(entry=>entry.values.includes('native-console-fixture')));
  const style=await debug('browser_inject',{operation:'inject',kind:'css',code:'body{background:rgb(2,3,4)}'});assert.equal(await execute('getComputedStyle(document.body).backgroundColor'),'rgb(2, 3, 4)');await debug('browser_inject',{operation:'remove',injectionId:style.id});
  await api('/webchat/open',{provider:'chatgpt',sessionId,url:`http://127.0.0.1:${wrapper.address().port}/`});await until(async()=>(await api('/webchat')).ready);
- const fallback=await api('/webchat/send',{sessionId,text:'内置 iframe 的自动完成回复'});await until(async()=>(await api('/bootstrap')).clientReplies.some(message=>message.requestId===fallback.requestId&&message.source==='browser'&&message.done));
- assert.equal((await api('/webchat')).busy,false);
+ await verifyBrowserFixture(api);
+ const fallback=await api('/webchat/send',{sessionId,text:'内置 iframe 的自动完成回复'});await until(async()=>!(await api('/webchat')).pageBusy);
+ assert.ok(!(await api('/bootstrap')).clientReplies.some(message=>message.requestId===fallback.requestId&&message.done),'网页生成结束不得自动冒充 MCP 回传');
+ await api('/tools/call',{name:'client_reply',args:{requestId:fallback.requestId,sessionId,text:'已通过 MCP 回传 iframe 结果。',done:true}});await until(async()=>!(await api('/webchat')).busy);
  await page.getByRole('button',{name:'打开 AI 浏览器',exact:true}).click();
  const nativeVisible=()=>app.evaluate(({BrowserWindow,webContents},prefix)=>{const target=webContents.getAllWebContents().find(w=>w.getURL().startsWith(prefix));return !!target&&BrowserWindow.getAllWindows().some(window=>window.contentView.children.some(view=>view.webContents?.id===target.id));},`http://127.0.0.1:${wrapper.address().port}/`);
  await until(nativeVisible);await page.getByRole('button',{name:'选择模型',exact:true}).click();await page.getByRole('menu',{name:'选择模型',exact:true}).waitFor();await until(async()=>!await nativeVisible());await page.keyboard.press('Escape');await page.getByRole('menu',{name:'选择模型',exact:true}).waitFor({state:'hidden'});await until(nativeVisible);
  await page.getByRole('tab',{name:'时间轴',exact:true}).click();await page.locator('.trajectory-record.tool').first().click();await page.getByRole('dialog',{name:'记录详情'}).waitFor();await until(async()=>!await nativeVisible());await page.getByRole('button',{name:'关闭记录详情',exact:true}).click();await page.getByRole('dialog',{name:'记录详情'}).waitFor({state:'hidden'});await until(nativeVisible);
- console.log('原生浏览器在模型菜单和详情弹层打开时隐藏，关闭后恢复：通过。');console.log('真实 Electron 内置网页：MCP 提前完成的发送保护/停止、控制台/JS/CSS、iframe 识别及 DOM 最终回复同步：通过。');
-}finally{if(app)await app.close();fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));wrapper.closeAllConnections();await new Promise(resolve=>wrapper.close(resolve));await fs.rm(directory,{recursive:true,force:true});}
+ console.log('原生浏览器在模型菜单和详情弹层打开时隐藏，关闭后恢复：通过。');console.log('真实 Electron 内置网页：MCP 提前完成的发送保护/停止、控制台/JS/CSS、iframe 识别及 普通网页正文不会冒充 MCP 完成：通过。');
+}catch(error){if(app){await fs.mkdir(path.join(root,'output/embedded-debug'),{recursive:true});const page=await app.firstWindow();await page.screenshot({path:path.join(root,'output/embedded-debug/failure.png')});console.error(await page.locator('body').innerText());}throw error;}finally{if(app)await app.close();fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));wrapper.closeAllConnections();await new Promise(resolve=>wrapper.close(resolve));await fs.rm(directory,{recursive:true,force:true});}

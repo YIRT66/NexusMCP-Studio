@@ -6,7 +6,7 @@ import type {WebchatState} from './types';
 export interface BrowserBridge {url:string;connected:boolean;transport:'embedded'|'extension'}
 export interface BrowserLink {
   external:boolean;runtimeConnected:boolean;extensionConnected:boolean|null;
-  bound:boolean;needsLogin:boolean;busy:boolean;canSend:boolean;
+  verification:NonNullable<WebchatState['verification']>;verify:()=>Promise<void>;bound:boolean;needsLogin:boolean;busy:boolean;canSend:boolean;
   label:string;detail:string;bridgeURL:string;refresh:()=>Promise<void>;
 }
 export function applyWebchatState(state:Partial<WebchatState>|undefined){
@@ -30,6 +30,8 @@ export function useBrowserLink(sessionId:string):BrowserLink {
     return()=>{active=false;clearInterval(timer);window.removeEventListener('focus',check);};
   },[connected,external]);
   useEffect(()=>{void refresh();},[webchat.sessionId,webchat.url,webchat.status,refresh]);
+  const verification=webchat.verification||{phase:'idle',step:0,error:''};
+  const verify=useCallback(async()=>{await request('/webchat/verify',{});},[]);
   const extensionConnected=external?bridge?.connected??null:null;
   const bound=!!webchat.url&&(!webchat.sessionId||webchat.sessionId===sessionId);
   const needsLogin=webchat.ready===false||/请.{0,8}(完成)?登录|未登录/.test(webchat.status);
@@ -45,7 +47,8 @@ export function useBrowserLink(sessionId:string):BrowserLink {
   else if(bound&&webpageProblem){label='网页需要处理';detail=webchat.status;}
   else if(bound&&!ready){label='正在检查当前网页';detail='正在确认当前聊天对应的网页是否可用。';}
   else if(bound){label='可以开始聊天';detail='会继续使用这条聊天对应的网页对话。';}
-  return {external,runtimeConnected:connected,extensionConnected,bound,needsLogin,busy:webchat.busy||!!webchat.pageBusy,
-    canSend:connected&&(!external||extensionConnected===true)&&bound&&ready&&!needsLogin&&!webpageProblem&&!webchat.busy&&!webchat.pageBusy,
+  if(bound&&ready&&!webchat.busy&&!webchat.pageBusy&&!needsLogin&&verification.phase!=='connected'){label=verification.phase==='checking'?'正在运行对话自检':verification.phase==='error'?'连接自检未通过':'等待连接自检';detail=verification.error||'完成实际收发测试后，才会显示连接完成。';}
+  return {verification,verify,external,runtimeConnected:connected,extensionConnected,bound,needsLogin,busy:webchat.busy||!!webchat.pageBusy,
+    canSend:verification.phase==='connected'&&connected&&(!external||extensionConnected===true)&&bound&&ready&&!needsLogin&&!webpageProblem&&!webchat.busy&&!webchat.pageBusy,
     label,detail,bridgeURL:bridge?.url||'',refresh};
 }

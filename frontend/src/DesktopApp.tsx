@@ -29,13 +29,16 @@ export function App() {
   const autoMcpStarted=useRef(false);
   useEffect(()=>{if(!s.connected||autoMcpStarted.current)return;autoMcpStarted.current=true;void ensureMcpStarted().catch(error=>{autoMcpStarted.current=false;s.set({error:'MCP 自动启动失败：'+error.message});});},[s.connected]);
   const ui=useSessionUI();
-  useEffect(()=>{if(!s.connected)return;let active=true;void request<WebchatState>('/webchat/activate',{sessionId:ui.activeSessionId}).then(state=>{if(active)applyWebchatState(state);}).catch(error=>{if(active&&useStudio.getState().webchat.transport!=='extension')s.set({error:error.message});});return()=>{active=false;};},[ui.activeSessionId,s.connected,s.webchat.transport]);
+  useEffect(()=>{if(!s.connected||!s.webchat.transport)return;let active=true;void request<WebchatState>('/webchat/activate',{sessionId:ui.activeSessionId}).then(state=>{if(active)applyWebchatState(state);}).catch(error=>{if(active&&useStudio.getState().webchat.transport!=='extension')s.set({error:error.message});});return()=>{active=false;};},[ui.activeSessionId,s.connected,s.webchat.transport]);
+  useEffect(()=>{const hydrate=(event:Event)=>{const session=(event as CustomEvent).detail;if(useSessionUI.getState().activeSessionId===session.id)useStudio.getState().set({messages:session.messages,calls:session.calls});};window.addEventListener('nexus:session-history',hydrate);return()=>window.removeEventListener('nexus:session-history',hydrate);},[]);
+  useEffect(()=>{const workspace=ui.workspaces.find(w=>w.id===ui.activeWorkspaceId)?.path;if(s.connected&&workspace)void request('/workbench/watch',{workspace}).catch(()=>{});},[s.connected,ui.activeWorkspaceId]);
   const [page, setPage] = useState<Page>('chat');
   const visited=useRef(new Set<Page>());visited.current.add(page);
   const[explorerNavigation,setExplorerNavigation]=useState({path:sessionStorage.getItem('nexus.explore-path')||'',sequence:0});
   useEffect(()=>{const explore=(event:Event)=>{setExplorerNavigation(current=>({path:(event as CustomEvent).detail.path,sequence:current.sequence+1}));setPage('explorer');};const terminal=()=>setPage('terminal');window.addEventListener('nexus:explore',explore);window.addEventListener('nexus:terminal',terminal);return()=>{window.removeEventListener('nexus:explore',explore);window.removeEventListener('nexus:terminal',terminal);};},[]);
   const [sidebar, setSidebar] = useState(()=>!matchMedia('(max-width: 700px)').matches);
   useEffect(()=>{const media=matchMedia('(max-width: 700px)');const update=()=>setSidebar(!media.matches);media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
+  useEffect(()=>{const preview=()=>{if(innerWidth<1280)setSidebar(false);};window.addEventListener('nexus:preview',preview);return()=>window.removeEventListener('nexus:preview',preview);},[]);
   const [query, setQuery] = useState('');
   const [nonce, setNonce] = useState(0);
   const [settingsTab,setSettingsTab]=useState<'general'|'model'|'mcp'|'permissions'>('general');

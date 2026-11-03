@@ -126,4 +126,4 @@ stdio 配置支持 `command,args,env,cwd`，模板支持 `${PLUGIN_DIR}`、`${NO
 
 ## DSH 原生插件
 
-原生 Cordis bundle 与界面插件通过「DSH 原生」分类安装，使用官方 `@deepseek-ai/dsh@0.2.1-rc.5` 在独立工作台运行，需要 Node.js 24.9+。它们不作为普通 MCP 清单直接加载。标准 MCP 与 SKILL.md 可按上文安装。引擎目录、版本和操作说明见 [功能说明](WORKSPACE-FEATURES.md)。
+原生 Cordis bundle 与界面插件与其他插件使用同一个安装器和列表，随包固定版本引擎在主窗口装配，不再打开独立工作台。原生工具可通过 `dsh_tools_list` / `dsh_tool_call` 使用官方执行管线。实际验证版本、适配方式和已知边界见 [原生插件验证说明](HARNESS-COMPATIBILITY.md)。

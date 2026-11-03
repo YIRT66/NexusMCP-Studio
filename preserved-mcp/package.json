@@ -1,6 +1,6 @@
 {
   "name": "nexusmcp-computer-service",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,17 +8,21 @@
     "test": "node --test test/*.test.mjs"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=24.9.0"
   },
   "dependencies": {
+    "@deepseek-ai/dsh": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-sdk-client": "0.2.1-rc.5",
     "@lydell/node-pty": "1.2.0-beta.18",
     "@modelcontextprotocol/sdk": "1.32.2",
     "diff": "^8.0.2",
+    "dsh-whale-musume": "2.5.0",
     "express": "5.1.0",
     "fflate": "0.8.2",
     "isomorphic-git": "1.37.0",
     "npm": "11.6.2",
     "playwright-core": "1.58.2",
+    "pnpm": "10.20.0",
     "ws": "8.18.3",
     "yaml": "2.8.1",
     "zod": "3.25.76",

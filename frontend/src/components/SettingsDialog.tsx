@@ -1,3 +1,4 @@
+import {createPortal} from 'react-dom';
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { X, Settings2, Shield, Puzzle, KeyRound, Sun, Moon, Monitor, Plus, Trash2, Check } from 'lucide-react';
@@ -53,7 +54,7 @@ export function SettingsDialog({initialTab='general'}:{initialTab?:Tab}) {
       s.set({ servers: [...useStudio.getState().servers, server] }); setName(''); setUrl('');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
-  return <motion.div className="settings-modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={tween} onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
+  return createPortal(<motion.div className="settings-modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={tween} onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
     <motion.div className="settings-dialog" role="dialog" aria-modal="true" aria-label="设置" ref={root} initial={{ opacity: 0, y: reduced ? 0 : 14, scale: reduced ? 1 : 0.975 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: reduced ? 0 : 8, scale: reduced ? 1 : 0.985 }} transition={tween} onKeyDown={event => {
       if (event.key === 'Escape') { event.stopPropagation(); close(); }
       if (event.key !== 'Tab') return;
@@ -92,5 +93,5 @@ export function SettingsDialog({initialTab='general'}:{initialTab?:Tab}) {
       </div>
       <footer className="settings-dialog-footer"><span>{tab === 'general' ? '已自动保存' : saved ? '设置已保存' : '当前工作空间'}</span>{tab !== 'permissions' ? <button className="settings-done" onClick={close}>完成</button> : <button className="settings-done" disabled={busy || !s.connected} onClick={() => void save()}>{busy ? '正在保存…' : saved ? '已保存' : '保存设置'}</button>}</footer>
     </motion.div>
-  </motion.div>;
+  </motion.div>,document.body);
 }

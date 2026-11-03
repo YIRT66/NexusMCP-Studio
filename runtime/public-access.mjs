@@ -24,9 +24,9 @@ export class PublicAccess {
    server.on('connection',socket=>{this.peers.add(socket);socket.once('close',()=>this.peers.delete(socket));});
    const wss=new WebSocketServer({noServer:true,maxPayload:1024*1024});this.wss=wss;
    server.on('upgrade',(req,socket,head)=>{
-    if(!this.allowedHost(req)||!this.authorized(req)||!this.originAllowed(req)||req.url!=='/ws'){socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;}
+    if(!this.allowedHost(req)||!this.authorized(req)||!this.originAllowed(req)||!(req.url==='/ws'||/^\/api\/remote(?:[/?]|$)/.test(req.url))){socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;}
     wss.handleUpgrade(req,socket,head,ws=>{
-     const upstream=new WebSocket(this.target.href.replace(/^http/,'ws').replace(/\/$/,'')+'/ws',{headers:{origin:this.target.origin,'x-nexus-shared-access':this.relaySecret,'x-nexus-access-id':this.accessId},handshakeTimeout:5000,maxPayload:64*1024*1024});
+     const upstream=new WebSocket(this.target.href.replace(/^http/,'ws').replace(/\/$/,'')+req.url,{headers:{origin:this.target.origin,'x-nexus-shared-access':this.relaySecret,'x-nexus-access-id':this.accessId},handshakeTimeout:5000,maxPayload:64*1024*1024});
      this.clients.add(ws);this.update({connections:this.clients.size});let queued=[],bytes=0;
      ws.on('message',(data,binary)=>{if(upstream.readyState===WebSocket.OPEN)upstream.send(data,{binary});else if(upstream.readyState===WebSocket.CONNECTING&&bytes+data.length<1024*1024){queued.push([data,binary]);bytes+=data.length;}});
      upstream.on('open',()=>{for(const[data,binary]of queued)upstream.send(data,{binary});queued=[];});
@@ -54,7 +54,7 @@ export class PublicAccess {
   if(/^\/api\/(?:public-access|dsh)(?:\/|$)/.test(req.url)){res.writeHead(403,{'Content-Type':'application/json'}).end(JSON.stringify({error:'此设置仅可在本机修改'}));return;}
   const headers={...req.headers,host:this.target.host,origin:this.target.origin,'x-nexus-shared-access':this.relaySecret,'x-nexus-access-id':this.accessId};delete headers.authorization;delete headers.referer;
   const upstream=httpRequest({hostname:this.target.hostname,port:this.target.port,path:req.url,method:req.method,headers},response=>{
-   const forwarded={...response.headers,'cache-control':'no-store','referrer-policy':'no-referrer','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; frame-ancestors 'none'"};delete forwarded['set-cookie'];res.writeHead(response.statusCode,forwarded);response.pipe(res);
+   const forwarded={...response.headers,'cache-control':'no-store','referrer-policy':'no-referrer','content-security-policy':"default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; frame-src 'self' http: https: blob:; frame-ancestors 'none'"};delete forwarded['set-cookie'];res.writeHead(response.statusCode,forwarded);response.pipe(res);
   });
   upstream.once('error',()=>{if(!res.headersSent)res.writeHead(502,{'Content-Type':'text/plain; charset=utf-8'});res.end('本地控制服务不可用');});req.once('aborted',()=>upstream.destroy());res.once('close',()=>upstream.destroy());req.pipe(upstream);
  }

@@ -20,3 +20,7 @@ test('文件：分段 UTF-8、大文件、批量读取、批量修改回滚与�
   const big=path.join(dir,'big');await fs.writeFile(big,'中文内容\n'.repeat(300000));await assert.rejects(readWhole(big),/2 MB/);assert.equal((await readText(big,{startLine:100000,maxLines:2})).text,'中文内容\n中文内容');
   await fs.writeFile(big,'x'.repeat(2000000)+'\nlast\n');assert.equal((await readText(big,{startLine:2})).text,'last');const oversized=await readText(big);assert.equal(oversized.oversizedLine,true);
 });
+
+test('创建空文件也必须真正写入磁盘，并区分新增与未修改',async t=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-empty-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));const file=path.join(directory,'empty.txt');const created=await writeText(file,'');assert.equal(created.operation,'created');assert.equal((await fs.stat(file)).size,0);assert.equal(created.unchanged,false);const repeated=await writeText(file,'');assert.equal(repeated.operation,'modified');assert.equal(repeated.unchanged,true);
+});

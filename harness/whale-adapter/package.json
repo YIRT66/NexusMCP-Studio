@@ -1,0 +1,34 @@
+{
+  "name": "nexus-certified-whale",
+  "version": "0.3.3",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./host.mjs",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "engines": {
+    "dsh": "0.2.1-rc.5"
+  },
+  "dependencies": {
+    "dsh-whale-musume": "2.5.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "slots"
+      ]
+    }
+  },
+  "nexus": {
+    "upstream": "dsh-whale-musume@2.5.0",
+    "adapter": "module-identity",
+    "upstreamEngines": "retained",
+    "certified": true
+  }
+}

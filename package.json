@@ -1,6 +1,6 @@
 {
   "name": "nexusmcp-studio",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "workspaces": [
     "frontend"
@@ -11,7 +11,7 @@
   },
   "scripts": {
     "dev": "node scripts/desktop.mjs --dev",
-    "build": "node scripts/sync-version.mjs && npm --workspace frontend run build",
+    "build": "node scripts/sync-version.mjs && npm --workspace frontend run build && node scripts/build-harness.mjs",
     "typecheck": "npm --workspace frontend run typecheck",
     "preview": "npm --workspace frontend run preview",
     "mcp:start": "node preserved-mcp/server.mjs",
@@ -28,7 +28,8 @@
     "test": "node --test --test-concurrency=1 runtime/*.test.mjs",
     "test:mcp": "npm --prefix preserved-mcp test",
     "build:browser-extension": "node scripts/sync-version.mjs && node scripts/package-browser-extension.mjs",
-    "version:sync": "node scripts/sync-version.mjs"
+    "version:sync": "node scripts/sync-version.mjs",
+    "build:harness": "node scripts/build-harness.mjs"
   },
   "dependencies": {
     "express": "5.1.0",
@@ -42,12 +43,13 @@
     "@types/ws": "^8.18.1",
     "electron": "45.2.1",
     "electron-builder": "26.18.0",
+    "esbuild": "0.28.2",
     "png-to-ico": "^3.0.1"
   },
   "main": "desktop/main.cjs",
-  "description": "NexusMCP Studio 独立桌面客户端",
+  "description": "NexusMCP Studio \u72ec\u7acb\u684c\u9762\u5ba2\u6237\u7aef",
   "author": "NexusMCP Studio",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=24.9.0"
   }
 }

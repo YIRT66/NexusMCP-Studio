@@ -1,23 +1,25 @@
 # NexusMCP Studio
 
-NexusMCP Studio 0.3.2 是支持 Windows、Linux 的桌面与网页工作空间。通过已登录的 AI 网页或 OpenAI 兼容 API 处理任务，使用 MCP 操作电脑，并查看对话、工具执行、审批和时间轴。
+NexusMCP Studio 0.3.3 是支持 Windows、Linux 的桌面与网页工作空间。通过已登录的 AI 网页或 OpenAI 兼容 API 处理任务，使用 MCP 操作电脑，并查看对话、工具执行、审批和时间轴。
 
-当前版本：**0.3.2**。
+当前版本：**0.3.3**。
 
-安装包见 [0.3.2 Release](https://github.com/YIRT66/NexusMCP-Studio/releases/tag/v0.3.2)，新功能与系统授权说明见 [版本说明](docs/releases/0.3.2.md)。
+安装包见 [0.3.3 Release](https://github.com/YIRT66/NexusMCP-Studio/releases/tag/v0.3.3)，新功能与系统授权说明见 [版本说明](docs/releases/0.3.3.md)。
 
-本版本新增 `workspace_read` 项目快照、`workspace_batch` 一次性文件任务、`command_run` 一次性命令；新增全权 Studio 扩展、文件预览、真实增删行、项目右键菜单与更多聊天组件。详见 [Studio 扩展开发](docs/STUDIO-EXTENSIONS.md)。后续默认使用 `0.3.x` 补丁号小步推进。
+本版本新增思考等级与公开思考展示、AI 提问续传、本地历史与项目记忆、右侧预览/Git 审阅/任务队列，并将原生插件融入主程序。兼容范围见 [原生插件验证说明](docs/HARNESS-COMPATIBILITY.md)。
+
+已有 `workspace_read` 项目快照、`workspace_batch` 一次性文件任务、`command_run` 一次性命令；新增全权 Studio 扩展、文件预览、真实增删行、项目右键菜单与更多聊天组件。详见 [Studio 扩展开发](docs/STUDIO-EXTENSIONS.md)。后续默认使用 `0.3.x` 补丁号小步推进。
 
 新版界面截图：[完整截图集](https://yirt66.github.io/NexusMCP-Studio/screenshots/)。自动安装入口位于「AI 浏览器」和「插件」。
 
 ## 当前功能
 
 - **MCP / API 模型**：输入框中按分类展开选择；API 支持流式回复、工具调用、停止和本机密钥保存。
-- **网页聊天**：内置浏览器与 Edge / Chrome 扩展，按客户端会话绑定对话；支持 iframe 识别、MCP 回复回传和网页最终回复同步。
+- **网页聊天**：内置浏览器与 Edge / Chrome 扩展，按客户端会话绑定对话；支持 iframe 识别、公开思考回传、四阶段实际对话自检与 MCP 最终回复。
 - **执行时间轴**：按轮次查看输入、助手回复与工具调用，支持时间比例、缩放、拖选、搜索、折叠及输入输出详情。
 - **电脑控制**：文件、持久终端、系统信息、窗口、桌面截图与键鼠；Windows 提供 UIA，Linux 桌面控制支持 X11。
 - **调试工具**：进程内存查询、Windows DLL / Linux SO 加载、浏览器控制台、JS / CSS 注入，沿用当前系统用户权限。
-- **扩展**：本地文件、ZIP、Git、npm、PyPI、HTTP / stdio MCP、SKILL.md，以及独立的 DeepSeek Harness 原生插件工作台。
+- **扩展**：本地文件、ZIP、Git、npm、PyPI、HTTP / stdio MCP、SKILL.md，以及融入主窗口的 DeepSeek Harness 原生插件。
 - **公网远控**：设置中一键建立 HTTPS 分享入口，提供带访问凭证的链接，支持关闭入口和撤销远程连接。
 - **界面**：深浅主题、共享动效、系统减少动态效果偏好、手机布局和网页版文件上传。
 
@@ -52,7 +54,7 @@ npm start              # 用桌面窗口打开构建产物
 npm run service:start  # 托管真实网页版，默认 http://127.0.0.1:8765
 ```
 
-网页版与桌面版自动连接本机运行时。API 模型在设置中配置；网页模型的登录、验证码和网站内的模型选择在对应网站完成。需要网页 AI 调用电脑工具时，仍需在该对话中启用 MCP 应用。
+网页版与桌面版自动连接本机运行时。API 模型在设置中配置；网页模型的登录、验证码和网站内的模型选择在对应网站完成。ChatGPT 网页使用已启用的 MCP 应用；DeepSeek 等不支持原生 MCP 的网页通过浏览器扩展执行工具协议。完成四阶段自检后发送任务。
 
 ## 打包
 

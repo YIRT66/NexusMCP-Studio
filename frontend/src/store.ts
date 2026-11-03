@@ -2,6 +2,8 @@ import {create} from 'zustand';
 import type {DshState,ApiModelProfile,ApiChatState,Settings,Mode,View,Phase,Tool,ToolCall,Message,Approval,Frame,ServerEntry,ServiceState,ServiceLog,HistoryEntry,WebchatState} from './types';
 import {useSessionUI} from './session-ui';
 interface State {
+ workspaceChanges:{id:string;workspace:string;path:string;operation:string;source:string;at:number}[];
+ questions:import('./types').UserQuestionSet[];
  preview?:{sessionId:string;workspace:string};
  browserInstall:{phase:string;progress:string;error?:string};
  extensions:import('./extensions').ExtensionEntry[];
@@ -16,7 +18,7 @@ interface State {
  terminalId:string|null;terminalVersion:number;terminalChunks:string[];set:(patch:Partial<State>)=>void;receive:(event:{type:string;data:any})=>void;
 }
 export const useStudio=create<State>((set,get)=>({
- browserInstall:{phase:'idle',progress:''},extensions:[],
+ workspaceChanges:[],questions:[],browserInstall:{phase:'idle',progress:''},extensions:[],
  publicAccess:{phase:'stopped',url:'',error:'',startedAt:0,connections:0},remote:false,
  dsh:{installed:false,running:false,phase:'uninstalled',version:'0.2.1-rc.5',error:'',progress:'',url:''},apiModels:[],apiChats:{},
  platform:'',terminalShells:['default'],
@@ -26,6 +28,10 @@ export const useStudio=create<State>((set,get)=>({
  service:{phase:'stopped',url:'',localUrl:'',error:'',lastClient:'',clientAt:0,startedAt:0,localOnly:false},
  tools:[],calls:[],logs:[],history:[],messages:[],approvals:[],servers:[],frame:null,cursor:null,metrics:null,error:'',terminalId:null,terminalVersion:0,terminalChunks:[],set,
  receive:({type,data})=>{
+  if(type==='harness.reload'){window.dispatchEvent(new Event('nexus:harness-reload'));return;}
+  if(type==='workspace.change'){set({workspaceChanges:[...get().workspaceChanges.filter(c=>c.id!==data.id),data].slice(-100)});return;}
+  if(type==='session.plan'){useSessionUI.getState().updateSessionId(data.sessionId,{plan:data.plan});return;}
+  if(type==='question.upsert'){set({questions:get().questions.some(q=>q.id===data.id)?get().questions.map(q=>q.id===data.id?data:q):[...get().questions,data]});return;}
   if(type==='browser-install.state'){set({browserInstall:data});return;}
   if(type==='extensions.changed'){set({extensions:data});return;}
   if(type==='public-access.state'){set({publicAccess:data});return;}
@@ -39,7 +45,8 @@ export const useStudio=create<State>((set,get)=>({
    if(data.sessionId===ui.activeSessionId)set({messages:data.messages});
    else{useSessionUI.setState({sessions:ui.sessions.map(session=>session.id===data.sessionId?{...session,messages:data.messages,updatedAt:Date.now()}:session)});}return;
   }
-  if(type==='webchat.state'){set({webchat:data,phase:data.busy?'executing':'idle'});return;}
+  if(type==='webchat.verification'){set({webchat:{...get().webchat,verification:data}});return;}
+  if(type==='webchat.state'){data={...data,verification:get().webchat.verification};set({webchat:data,phase:data.busy?'executing':'idle'});return;}
   if(type==='message.upsert'){
    const ui=useSessionUI.getState();
    if(data.sessionId&&data.sessionId!==ui.activeSessionId){const target=ui.sessions.find(s=>s.id===data.sessionId);if(target){const messages=target.messages.some(m=>m.id===data.id)?target.messages.map(m=>m.id===data.id?data:m):[...target.messages,data];ui.captureSession(target.id,messages,target.calls);}return;}

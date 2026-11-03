@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import {verifyBrowserFixture} from './verify-browser-fixture.mjs';
 import { startFixture } from '../runtime/webchat-fixture.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -56,6 +57,7 @@ try {
   await target.goto('https://chatgpt.com/');
   await target.getByRole('button', { name: '模拟登录', exact: true }).click();
   await until(async () => (await api('/webchat')).status.includes('就绪'));
+  await verifyBrowserFixture(api);
   const count = browser.pages().length;
   for (const text of ['Linux 扩展第一条', 'Linux 扩展第二条']) {
     const request = await api('/webchat/send', { text, sessionId: 'extension-session-A' });
@@ -64,19 +66,21 @@ try {
     const reply = await api('/tools/call', { name: 'client_reply', args: { requestId: request.requestId, sessionId: request.sessionId, text: 'MCP 回复：' + text, done: true } });
     assert.ok(!reply.isError, JSON.stringify(reply));
     await until(async () => !(await api('/webchat')).busy);
-    await target.waitForFunction(() => document.getElementById('stop').hidden);
+    try{await target.waitForFunction(() => document.getElementById('stop').hidden);}catch(error){console.error('STOP DIAGNOSTIC',JSON.stringify({state:await api('/webchat'),worker:await worker.evaluate(async()=>({status,jobRequest:job?.requestId,snapshot:await inspect('status')})),stop:await target.locator('#stop').evaluate(e=>({hidden:e.hidden,display:getComputedStyle(e).display}))}));throw error;}
   }
   assert.equal(browser.pages().length, count);
-  assert.equal(await target.evaluate(() => sentMessages.length), 2);
+  assert.equal(await target.evaluate(() => sentMessages.length), 3);
   const boot = await api('/bootstrap');
   assert.equal(boot.clientReplies.length, 2);
   assert.ok(boot.clientReplies.every(reply => reply.source === 'MCP' && reply.sessionId === 'extension-session-A'));
   await target.goto('https://chatgpt.com/framed');
   await until(async()=>{const snap=await api('/webchat');return snap.ready&&!snap.busy;});
-  const fallback=await api('/webchat/send',{text:'iframe 中的网页回退回复',sessionId:'extension-session-A'});
-  await until(async()=>{const boot=await api('/bootstrap');return boot.clientReplies.some(reply=>reply.requestId===fallback.requestId&&reply.source==='browser'&&reply.done);});
-  assert.equal((await api('/webchat')).busy,false);
-  assert.ok((await api('/bootstrap')).clientReplies.find(reply=>reply.requestId===fallback.requestId).content.includes('iframe 中的网页回退回复'));
+  await verifyBrowserFixture(api);
+  const fallback=await api('/webchat/send',{text:'iframe 中的网页回退回复（自动完成）',sessionId:'extension-session-A'});
+  await until(async()=>{const value=await api('/webchat');return !value.pageBusy;});
+  assert.ok(!(await api('/bootstrap')).clientReplies.some(reply=>reply.requestId===fallback.requestId&&reply.done),'普通网页正文不能自动冒充 MCP 完成');
+  await api('/tools/call',{name:'client_reply',args:{requestId:fallback.requestId,sessionId:fallback.sessionId,text:'已核实 iframe 中的网页回复，并通过 MCP 回传。',done:true}});
+  await until(async()=>!(await api('/webchat')).busy);
   await api('/webchat/open', { provider: 'chatgpt', sessionId: 'extension-session-B' });
   await until(() => browser.pages().length === count + 1);
   assert.equal(browser.pages().length, count + 1);
@@ -95,7 +99,7 @@ try {
   await popup.locator('#disconnect').click();
   await popup.locator('#connection').filter({ hasText: '未连接' }).waitFor();
   await until(async () => !(await api('/webchat/bridge')).connected);
-  console.log('真实 Manifest V3 扩展：配对、发送、MCP 回复、iframe 聊天框识别、DOM 完成回退、会话隔离与断开均通过。');
+  console.log('真实 Manifest V3 扩展：配对、发送、MCP 回复、iframe 聊天框识别、普通网页正文不会冒充完成、会话隔离与断开均通过。');
 } finally {
   await browser?.close();
   if (child.connected) { child.send({ type: 'shutdown' }); await new Promise(resolve => { child.once('exit', resolve); setTimeout(() => { child.kill(); resolve(); }, 8000).unref(); }); }

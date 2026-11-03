@@ -44,3 +44,9 @@ preserved-mcp/runtime/node.exe
 preserved-mcp/bin/cloudflared.exe
 preserved-mcp/runtime/node
 preserved-mcp/bin/cloudflared
+
+# Generated native client bundles
+harness/nexus-shell/client.js
+harness/nexus-shell/client.css
+harness/whale-adapter/client.js
+harness/whale-adapter/UPSTREAM-LICENSE

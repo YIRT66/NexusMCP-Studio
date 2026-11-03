@@ -46,12 +46,23 @@ globalThis.nexusWebchatAdapter = async function (request = {}) {
     const userText = value(lastUser);
     const afterUser = last && lastUser ? !!(lastUser.compareDocumentPosition(last) & Node.DOCUMENT_POSITION_FOLLOWING) : false;
     const requestId = afterUser ? userText.match(/"requestId"\s*:\s*"([^"\n]+)"/)?.[1] : undefined;
-    const reply = (globalThis.NexusReplyMarkdown?globalThis.NexusReplyMarkdown(last):value(last)).slice(-200000);
+    const reasoningSelectors='[data-reasoning],[data-role="thinking"],[data-testid="thinking-block"],.ds-think-content,.ds-reasoning,.reasoning-content';
+    const turn=last?.closest('[data-role="assistant"],[data-message-author-role="assistant"],[data-testid="assistant-message"],.ds-message')||last?.parentElement;
+    const thinking=turn?[...turn.querySelectorAll(reasoningSelectors)]:[];
+    const reasoning=thinking.filter(node=>!thinking.some(other=>other!==node&&other.contains(node))).map(node=>value(node)).join('\n\n').slice(-200000);
+    let answer=last;
+    if(turn&&thinking.some(node=>node===last||node.contains(last)))answer=[...turn.querySelectorAll('.ds-markdown,[data-role="answer"],.markdown')].filter(node=>!thinking.some(thought=>thought===node||thought.contains(node))).at(-1);
+    let clean=answer?.cloneNode(true);if(clean)for(const node of clean.querySelectorAll(reasoningSelectors))node.remove();
+    const reply = (globalThis.NexusReplyMarkdown?globalThis.NexusReplyMarkdown(clean):value(clean)).slice(-200000);
+    const thinkingButton=[...document.querySelectorAll('button,[role="button"]')].find(node=>/^(深度思考|DeepThink|Thinking)(\s|$|\()/.test((node.innerText||node.getAttribute('aria-label')||'').trim()));
+    const toggle=thinkingButton?.getAttribute('aria-pressed')??thinkingButton?.getAttribute('aria-checked')??thinkingButton?.getAttribute('data-state');
+    const thinkingEnabled=['true','on','checked'].includes(toggle)?true:['false','off','unchecked'].includes(toggle)?false:undefined;
+
     const sent=globalThis.__nexusSentTurn;
     const fallbackRequest=sent && (identity(last)!==sent.replyId||replies.length>sent.replyCount||reply!==sent.reply) ? sent.requestId : undefined;
     const toolBlocks = last ? [...last.querySelectorAll('pre')].slice(-8).map(node=>(node.textContent||'').slice(0,200000)) : [];
     const problem = !input && /Invalid content type|Route Error|Something went wrong|糟糕，出错了/.test(document.body?.innerText || '') ? '网页返回错误，请刷新网页或重新绑定标签页' : '';
-    const result = { adapterVersion: '1.2.0', provider, toolBlocks, url: location.href, title: document.title, ready: !!input, input: value(input), busy: !!stopButton() || streaming, streaming, canSend: !!enabled(button)||!button&&keyboardSend&&!!input, reply, replyId: identity(last), replyCount: replies.length, lastUserText: userText.slice(-120000), replyForRequestId: requestId || (!lastUser?fallbackRequest:undefined), problem, replyMode: 'mcp' };
+    const result = { adapterVersion: '0.3.3', provider,reasoning,thinkingEnabled,reasoningStatus:reasoning?(!!stopButton()||streaming?'streaming':'completed'):'idle', toolBlocks, url: location.href, title: document.title, ready: !!input, input: value(input), busy: !!stopButton() || streaming, streaming, canSend: !!enabled(button)||!button&&keyboardSend&&!!input, reply, replyId: identity(last), replyCount: replies.length, lastUserText: userText.slice(-120000), replyForRequestId: requestId || (!lastUser?fallbackRequest:undefined), problem, replyMode: 'mcp' };
     if (!history) return result;
     const nodes = [...users.map(node => ({ node, role: 'user' })), ...replies.map(node => ({ node, role: 'assistant' }))].sort((a, b) => a.node === b.node ? 0 : a.node.compareDocumentPosition(b.node) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
     const counts = { user: 0, assistant: 0 }; let budget = 200000;

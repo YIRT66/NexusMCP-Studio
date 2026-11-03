@@ -24,6 +24,8 @@ export function AIBrowserPanel({suspended,onClose,onConnect,link,opening,pageErr
  const copyTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
  const[consoleOpen,setConsoleOpen]=useState(false);
  const external=link.external,working=loading||opening;
+ const verifiedBinding=useRef('');
+ useEffect(()=>{const key=session.id+':'+s.webchat.provider;if(link.runtimeConnected&&link.bound&&!link.needsLogin&&s.webchat.ready&&(!external||link.extensionConnected)&&link.verification.phase==='idle'&&verifiedBinding.current!==key){verifiedBinding.current=key;void link.verify().catch(error=>setError(error.message));}},[session.id,s.webchat.provider,s.webchat.ready,link.verification.phase,link.bound,link.needsLogin,link.extensionConnected,external]);
  const aiName=aiSites.find(site=>site.id===s.webchat.provider)?.name||'AI';
  const panelWidth=viewport<=650?'100%':viewport<=1100?'70%':'45%';
  useEffect(()=>{const resize=()=>setViewport(innerWidth);window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize);},[]);
@@ -90,7 +92,9 @@ export function AIBrowserPanel({suspended,onClose,onConnect,link,opening,pageErr
      <li data-complete={link.runtimeConnected}><span>{link.runtimeConnected?<Check size={13}/>:<Monitor size={13}/>}</span><div>本地运行时<small>{link.runtimeConnected?'已连接':'等待连接'}</small></div></li>
      <li data-complete={link.extensionConnected===true}><span>{link.extensionConnected===true?<Check size={13}/>:<Globe size={13}/>}</span><div>浏览器扩展<small>{link.extensionConnected===null?'检查中':link.extensionConnected?'已连接':'未连接'}</small></div></li>
      <li data-complete={link.bound&&link.extensionConnected===true}><span>{link.bound&&link.extensionConnected===true?<Check size={13}/>:<Link2 size={13}/>}</span><div>当前聊天网页<small>{link.bound?'已绑定'+(link.needsLogin?'，请登录':''):'尚未打开'}</small></div></li>
+     <li data-complete={link.verification.phase==='connected'}><span>{link.verification.phase==='connected'?<Check size={13}/>:<LoaderCircle size={13} className={link.verification.phase==='checking'?'spin':''}/>}</span><div>实际对话回传<small>{link.verification.phase==='connected'?'连接完成':link.verification.phase==='checking'?'正在运行隐藏测试':link.verification.phase==='error'?'测试失败':'尚未测试'}</small></div></li>
     </ul>
+    {link.bound&&!link.needsLogin&&<div className="browser-verification"><p>{link.verification.error||'自检会发送一条简短测试消息，可能消耗模型额度；测试不进入软件聊天和记忆。'}</p><button className="browser-link-secondary" disabled={link.verification.phase==='checking'||link.busy} onClick={()=>void link.verify().catch(error=>setError(error.message))}>{link.verification.phase==='connected'?'重新检测连接':'运行连接自检'}</button></div>}
     {link.bound&&<p className="browser-bound-url" title={s.webchat.url}>{s.webchat.url}</p>}
     {link.runtimeConnected&&<div className="browser-auto-install"><button className="browser-link-primary" disabled={['preparing','downloading','launching'].includes(s.browserInstall.phase)} onClick={()=>{setError('');void request('/browser-extension/install',{sessionId:session.id,provider:s.webchat.provider}).catch(error=>setError(error.message));}}>{['preparing','downloading','launching'].includes(s.browserInstall.phase)?<LoaderCircle size={14} className="spin"/>:<Globe size={14}/>}一键安装并连接浏览器扩展</button><p>{s.browserInstall.error||s.browserInstall.progress||'自动下载兼容 Chromium、安装扩展并配对。首次完成网页登录后即可使用。'}</p>{s.settings.autoInstallBrowser&&<button className="browser-link-secondary" onClick={()=>void request('/settings',{autoInstallBrowser:false}).catch(error=>setError(error.message))}>关闭启动时自动恢复浏览器</button>}</div>}
     <div className="browser-link-primary-actions">
@@ -104,6 +108,7 @@ export function AIBrowserPanel({suspended,onClose,onConnect,link,opening,pageErr
     </details>}
    </div></div>:working?<span><LoaderCircle size={18} className="spin"/>正在打开网页…</span>:<span>网页在这里显示。也可切换到 Edge / Chrome 扩展。</span>}
   </div>
+  {!external&&<div className="embedded-verification"><span>{link.verification.phase==='connected'?'4/4 · 连接完成':link.verification.phase==='checking'?'3/4 · 实际对话自检中':'3/4 · 等待实际对话自检'}</span><button disabled={link.busy||link.verification.phase==='checking'||!s.webchat.ready} onClick={()=>void link.verify().catch(error=>setError(error.message))}>检测连接</button>{link.verification.error&&<small>{link.verification.error}</small>}</div>}
   {consoleOpen&&<BrowserConsole/>}
   <footer title={link.detail}><span>{link.label}</span><button aria-expanded={consoleOpen} onClick={()=>setConsoleOpen(value=>!value)}>{consoleOpen?'收起控制台':'打开控制台'}</button></footer>
  </motion.aside>;

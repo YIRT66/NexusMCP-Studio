@@ -69,11 +69,11 @@ function registerAppProtocol() {
     const url = new URL(request.url);
     if (url.host !== 'studio') return new Response('地址不存在', { status: 404 });
     // 桌面版的 API 仍同源；只转发到已约定的本机运行时。
-    if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+    if (url.pathname === '/api' || ['/api/','/native/','/plugins/','/open-in-app/'].some(prefix=>url.pathname.startsWith(prefix))) {
       try {
         return await net.fetch(`${runtimeUrl}${url.pathname}${url.search}`, {
           method: request.method,
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          headers: { 'Content-Type': request.headers.get('content-type')||'application/json', Accept: request.headers.get('accept')||'*/*' },
           body: ['GET', 'HEAD'].includes(request.method) ? undefined : await request.arrayBuffer(),
           signal: request.signal,
           redirect: 'error',
@@ -91,7 +91,7 @@ function registerAppProtocol() {
     try {
       const response = await net.fetch(pathToFileURL(file).href);
       const headers = new Headers(response.headers);
-      headers.set('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${runtimeUrl.replace('http:','ws:')}; object-src 'none'; base-uri 'none'; frame-src 'none'`);
+      headers.set('Content-Security-Policy', `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${runtimeUrl.replace('http:','ws:')}; object-src 'none'; base-uri 'none'; frame-src 'self' http: https: blob:`);
       return new Response(request.method === 'HEAD' ? null : response.body, {
         status: response.status, headers,
       });
@@ -185,14 +185,6 @@ if (!app.requestSingleInstanceLock()) {
     logStartup('runtime:ready',{url:runtimeUrl});
     ipcMain.handle('desktop:reveal-path',async(event,target)=>{if(event.sender!==mainWindow?.webContents||typeof target!=='string'||!path.isAbsolute(target))throw new Error('路径无效');const resolved=await fs.promises.realpath(target);const stat=await fs.promises.stat(resolved);if(stat.isDirectory()){const error=await shell.openPath(resolved);if(error)throw new Error(error);}else shell.showItemInFolder(resolved);return true;});
     ipcMain.handle('desktop:get-runtime',event=>event.sender===mainWindow?.webContents?runtimeUrl:null);
-    ipcMain.handle('desktop:open-dsh',async event=>{
-      if(!mainWindow||event.sender!==mainWindow.webContents)throw new Error('无效窗口');
-      const state=await fetch(runtimeUrl+'/api/dsh').then(response=>response.json());
-      const url=new URL(state.url);if(!state.running||url.protocol!=='http:'||url.hostname!=='127.0.0.1')throw new Error('DSH 工作台尚未启动');
-      const window=new BrowserWindow({parent:mainWindow,width:1200,height:850,title:'NexusMCP · DSH 插件工作台',autoHideMenuBar:true,webPreferences:{partition:'persist:nexus-dsh',nodeIntegration:false,contextIsolation:true,sandbox:true}});
-      window.webContents.setWindowOpenHandler(({url})=>{openLink(url);return {action:'deny'};});
-      await window.loadURL(url.href);
-    });
     ipcMain.handle('desktop:open-browser-plugin',async event=>{
       if(event.sender!==mainWindow?.webContents)return;
       let directory=path.join(root,'browser-plugin');

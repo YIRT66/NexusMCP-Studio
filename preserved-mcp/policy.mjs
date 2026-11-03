@@ -10,6 +10,7 @@ export function configure(next) { Object.assign(policy, next); }
 export function resolveApproval(id, allowed) { const request = pending.get(id); if (!request) return false; clearTimeout(request.timer); pending.delete(id); process.send?.({ type: 'approval.resolved', id }); allowed ? request.resolve() : request.reject(new Error('用户拒绝了此操作')); return true; }
 export function cancelApprovals(requestId,sharedAccessId) { for (const [id, request] of pending) if ((!requestId || request.requestId === requestId)&&(!sharedAccessId||request.sharedAccessId===sharedAccessId)) resolveApproval(id, false); }
 export async function authorize(name, args, readOnly) {
+  if(policy.diagnostic&&origin()==='remote'&&!['client_session','client_reply'].includes(name))throw new Error('连接诊断只允许读取会话诊断和回传校验码');
   if (policy.disabled.includes(name)) throw new Error('此工具已在本机设置中禁用');
   if (name==='client_reply' || readOnly || !['remote','api','browser'].includes(origin()) || policy.mode === 'overdrive' || !process.send) return;
   if (pending.size >= 8) throw new Error('待审批操作过多，请等待用户处理');

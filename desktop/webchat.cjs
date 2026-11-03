@@ -32,7 +32,7 @@ class WebChat{
   if(this.pages.has(this.key(provider,sessionId))||this.savedURLs[this.key(provider,sessionId)])return this.open(provider,undefined,sessionId);
   this.hide();this.sessionId=sessionId;this.provider=provider;this.status='新会话，打开 AI 浏览器后开始新的网页对话';this.lastHistory='';this.changed();return this.state();
  }
- state(){return {providers,provider:this.provider,sessionId:this.sessionId,url:this.page()?.webContents.getURL()||'',visible:this.visible,busy:!!this.job,status:this.status||'请打开 AI 网页并登录',replyMode:'mcp',ready:this.ready,pageBusy:this.pageBusy,requestId:this.job?.requestId}}
+ state(){return {providers,provider:this.provider,sessionId:this.sessionId,url:this.page()?.webContents.getURL()||'',visible:this.visible,busy:!!this.job,startedAt:this.job?.started,status:this.status||'请打开 AI 网页并登录',replyMode:'mcp',ready:this.ready,thinkingEnabled:this.thinkingEnabled,pageBusy:this.pageBusy,requestId:this.job?.requestId}}
  emit(type,data){if(!this.window.isDestroyed())this.window.webContents.send('webchat:event',{type,data});this.publish?.(type,data)}
  changed(){const value=this.state(),serialized=JSON.stringify(value);if(serialized===this.lastState)return;this.lastState=serialized;this.emit('webchat.state',value)}
  async open(id=this.provider,url,sessionId=this.sessionId){
@@ -101,17 +101,18 @@ class WebChat{
   return {id};
  }
  async stop(){
-  if(!this.job&&!this.pageBusy)return;
+  if(!this.page())return;
   const result=await this.inspect('stop');
   if(!result.stopped&&result.busy)throw new Error('网页仍在生成，未找到停止按钮，请打开网页手动停止');
   if(!result.stopped&&this.job?.sending)throw new Error('消息仍在提交，请稍后再停止');
-  this.job=null;this.emit('agent.status',{phase:'idle'});this.changed();
+  this.job=null;this.pageBusy=!!result.busy;this.emit('agent.status',{phase:'idle'});this.changed();
  }
  async poll(){
   if(this.polling||this.opening||!this.pages.size||this.window.isDestroyed()||this.disposed)return;this.polling=true;
-  try{const key=this.key();const snapshot=await this.inspect('status');if(key!==this.key())return;this.ready=!!snapshot.ready;this.pageBusy=!!snapshot.busy;
-   if(this.job&&Date.now()-this.job.started>10*60*1000){this.emit('webchat.failed',{requestId:this.job.requestId,sessionId:this.job.sessionId,error:'等待网页回复超时，请检查网页后重试'});this.job=null;this.emit('agent.status',{phase:'idle'});}
-   if(this.job){const completed=!this.job.sending&&this.job.tracker.observe(snapshot);if(completed){this.emit('webchat.reply',completed);this.status='网页已生成完，正在同步回复'}else this.status=snapshot.busy?'网页正在生成回复':snapshot.replyForRequestId===this.job.requestId?'正在确认回复完成':'等待网页回复或 MCP 回传';}
+  try{const key=this.key();const snapshot=await this.inspect('status');if(key!==this.key())return;this.ready=!!snapshot.ready;this.pageBusy=!!snapshot.busy;this.thinkingEnabled=snapshot.thinkingEnabled;
+   if(this.job&&snapshot.reasoning&&(this.job.lastReasoning!==snapshot.reasoning||this.job.lastReasoningStatus!==snapshot.reasoningStatus)){this.job.lastReasoning=snapshot.reasoning;this.job.lastReasoningStatus=snapshot.reasoningStatus;this.emit('webchat.reasoning',{requestId:this.job.requestId,sessionId:this.job.sessionId,provider:this.provider,reasoning:snapshot.reasoning,reasoningStatus:snapshot.reasoningStatus});}
+   if(this.job&&!this.job.awaitingUser&&Date.now()-this.job.started>10*60*1000){this.emit('webchat.failed',{requestId:this.job.requestId,sessionId:this.job.sessionId,error:'等待网页回复超时，请检查网页后重试'});this.job=null;this.emit('agent.status',{phase:'idle'});}
+   if(this.job){const completed=!this.job.sending&&this.job.tracker.observe(snapshot);if(completed){this.status='等待通过 MCP client_reply 回传软件'}else this.status=snapshot.busy?'网页正在生成回复':snapshot.replyForRequestId===this.job.requestId?'正在确认回复完成':'等待网页回复或 MCP 回传';}
    else this.status=snapshot.problem||(snapshot.ready?'网页已就绪':'请在内置浏览器中完成登录');this.changed()}
   catch(e){this.status=e.message;this.changed()}finally{this.polling=false}
  }
@@ -121,6 +122,8 @@ class WebChat{
    if(!wc.nexusDebugger){if(wc.debugger.isAttached())throw new Error('网页已有其他调试连接，请先关闭开发者工具');wc.debugger.attach('1.3');const controller=new NexusDebugController((method,params)=>wc.debugger.sendCommand(method,params));wc.debugger.on('message',(_event,method,params)=>controller.event(method,params));wc.debugger.once('detach',()=>{wc.nexusDebugger=null;});await controller.enable();wc.nexusDebugger=controller;}
    return wc.nexusDebugger.dispatch(data);
   }
+  if(op==='question.waiting'){if(this.job?.requestId===data.requestId)this.job.awaitingUser=true;this.status='等待软件中的用户回答';this.changed();return {ok:true};}
+  if(op==='question.result'){if(this.job?.requestId!==data.requestId)throw new Error('提问续传不属于当前任务');await this.stop();return this.send({requestId:data.requestId,sessionId:data.sessionId,replyVia:'mcp',text:'【NexusMCP 用户回答】\n'+JSON.stringify(data)+'\n继续原任务并通过 client_reply 回传。'});}
   if(op==='reply.received'){if(this.job?.requestId===data.requestId){this.job=null;this.status=data.source==='browser'?'网页回复已同步':'MCP 回复已接收';this.emit('agent.status',{phase:'idle'});this.changed()}return {ok:true}}if(op==='state')return this.state();if(op==='activate')return this.activate(data.sessionId);if(op==='open')return this.open(data.provider,data.url,data.sessionId);if(op==='send')return this.send(data);if(op==='stop')return this.stop();
   if(op==='back'){if(this.page()?.webContents.navigationHistory.canGoBack())this.page().webContents.navigationHistory.goBack();return}
   if(op==='reload'){if(this.job)throw new Error('请先停止网页回复再刷新');this.page()?.webContents.reload();return}

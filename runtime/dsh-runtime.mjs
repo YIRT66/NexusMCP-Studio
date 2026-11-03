@@ -1,3 +1,5 @@
+import {createHash} from 'node:crypto';
+import {existsSync} from 'node:fs';
 import { promises as fs } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -10,7 +12,7 @@ const engine = path.join(root, 'preserved-mcp');
 const redact = text => String(text).replace(/([?&](?:token|key|auth)=)[^\s&]+/gi, '$1[已隐藏]').replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/g, '$1[已隐藏]@');
 export class DshRuntime {
   constructor(directory, publish = () => {}) {
-    this.directory = path.join(directory, 'dsh'); this.installDir = process.env.NEXUS_DSH_ENGINE_DIR || path.join(this.directory, 'engine'); this.home = path.join(this.directory, 'home'); this.node = process.env.NEXUS_DSH_NODE_PATH || platform.runtimePaths(engine).node; this.publish = publish; this.child = null; this.jobs = new Set(); this.operation = null; this.info = { installed: false, running: false, phase: 'uninstalled', version: DSH_VERSION, error: '', progress: '', url: '' };
+    this.directory = path.join(directory, 'dsh'); this.installDir = process.env.NEXUS_DSH_ENGINE_DIR || (existsSync(path.join(engine,'node_modules/@deepseek-ai/dsh/package.json'))?engine:path.join(this.directory, 'engine')); this.home = path.join(this.directory, 'home'); this.node = process.env.NEXUS_DSH_NODE_PATH || platform.runtimePaths(engine).node; this.publish = publish; this.child = null; this.jobs = new Set(); this.operation = null; this.info = { installed: false, running: false, phase: 'uninstalled', version: DSH_VERSION, error: '', progress: '', url: '' };
   }
   async init() { await fs.mkdir(this.directory, { recursive: true }); try { const pkg = JSON.parse(await fs.readFile(path.join(this.installDir, 'node_modules/@deepseek-ai/dsh/package.json'), 'utf8')); this.info.installed = pkg.version === DSH_VERSION; this.info.phase = this.info.installed ? 'stopped' : 'uninstalled'; } catch {} }
   snapshot() { return { ...this.info }; }
@@ -37,11 +39,26 @@ export class DshRuntime {
     })().catch(error => { this.update({ phase: 'error', error: error.message }); throw error; }).finally(() => { this.operation = null; });
     return this.operation;
   }
+  async ensureShell(){
+    const source=path.join(root,'harness/nexus-shell');if(!existsSync(path.join(source,'client.js')))throw new Error('原生客户端未构建，请执行 npm run build');
+    const fingerprint=createHash('sha256').update(await fs.readFile(path.join(source,'client.js'))).update(await fs.readFile(path.join(source,'host.mjs'))).update(await fs.readFile(path.join(source,'session-records.mjs'))).update(await fs.readFile(path.join(source,'client.css'))).digest('hex');
+    const marker=path.join(this.directory,'shell-revision');const previous=await fs.readFile(marker,'utf8').catch(()=>'');
+    const installed=await this.plugins();const existing=installed.some(plugin=>plugin.name==='nexus-studio-shell');
+    if(existing&&previous===fingerprint)return;
+    if(existing)await this.plugin({action:'remove',spec:'nexus-studio-shell'});
+    await this.plugin({action:'add',spec:'file:'+source});await fs.writeFile(marker,fingerprint,{mode:0o600});
+  }
+
   async start() {
+    if(this.starting)return this.starting;
+    this.starting=this.startOnce().finally(()=>{this.starting=null;});
+    return this.starting;
+  }
+  async startOnce() {
     if (this.child || this.info.phase === 'starting') return this.snapshot();
     if (this.operation) throw new Error('请等待 DSH 安装或插件操作完成');
     if (!this.info.installed) throw new Error('请先安装 DSH 兼容引擎');
-    await this.checkNode(); await fs.mkdir(this.home, { recursive: true });
+    await this.checkNode();await this.ensureShell(); await fs.mkdir(this.home, { recursive: true });
     const server = createServer(); await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); }); const port = server.address().port; await new Promise(resolve => server.close(resolve));
     this.update({ phase: 'starting', error: '', progress: '正在启动原生插件工作台', url: '' });
     const child = spawn(this.node, [this.cli(), 'web', '--no-open', '--host', '127.0.0.1', '--port', String(port)], { cwd: this.directory, env: this.env(), detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }); this.child = child;

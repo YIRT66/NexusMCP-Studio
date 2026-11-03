@@ -11,7 +11,7 @@ let diagnostic='';child.stdout.on('data',c=>diagnostic+=c);child.stderr.on('data
 try{
  const ready=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error(diagnostic)),15000);child.on('message',m=>{if(m.type==='runtime.ready'){clearTimeout(timer);resolve(m)}});child.once('error',reject);child.once('exit',code=>reject(new Error('包内进程退出 '+code+diagnostic)))});
  const api=async(route,body)=>{const r=await fetch(ready.url+'/api'+route,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const value=await r.json();assert.ok(r.ok,JSON.stringify(value));return value};
- assert.equal((await api('/health')).service,'nexus-local-runtime');const webpage=await fetch(ready.url);assert.equal(webpage.status,200);assert.match(await webpage.text(),/id="root"/);await api('/service/start',{});
+ assert.equal((await api('/health')).service,'nexus-local-runtime');const native=await api('/harness/start',{});assert.equal(native.ready,true);assert.equal(native.engine,'0.2.1-rc.5');const webpage=await fetch(ready.url);assert.equal(webpage.status,200);assert.match(await webpage.text(),/id="root"/);await api('/service/start',{});
  let boot;for(let i=0;i<100;i++){boot=await api('/bootstrap');if(boot.service.phase==='running')break;if(boot.service.phase==='error')throw new Error(boot.service.error);await new Promise(r=>setTimeout(r,100))}
  assert.equal(boot.service.phase,'running');assert.ok(boot.tools.some(t=>t.name==='skill_read'));assert.ok(boot.tools.some(t=>t.name==='file_patch'));
  const terminal=await api('/tools/call',{name:'terminal_create',args:{}});assert.ok(!terminal.isError);assert.ok(JSON.parse(terminal.content[0].text).id);

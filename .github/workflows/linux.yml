@@ -17,7 +17,7 @@ concurrency:
 jobs:
   linux:
     runs-on: ubuntu-22.04
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,15 +38,16 @@ jobs:
       - name: Verify source and MCP integration
         run: |
           npm run typecheck
+          npm run build
           npm run test:mcp
           xvfb-run -a sh -c 'openbox >/tmp/nexus-openbox.log 2>&1 & npm test && node scripts/test-browser-extension.mjs'
           node scripts/test-extension-popup.mjs
+          node scripts/test-browser-reasoning.mjs
         env:
           XDG_SESSION_TYPE: x11
       - name: Verify official DSH native plugin compatibility
         run: |
-          npm install --prefix "$RUNNER_TEMP/nexus-dsh-engine" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.1-rc.5 pnpm@10.20.0
-          NEXUS_DSH_ENGINE_DIR="$RUNNER_TEMP/nexus-dsh-engine" node --test runtime/dsh-native.test.mjs
+          NEXUS_DSH_ENGINE_DIR="$PWD/preserved-mcp" node --test runtime/dsh-native.test.mjs
       - run: npm run prepare:runtime
       - name: Build Linux service and desktop packages
         run: |
@@ -55,6 +56,9 @@ jobs:
           node scripts/package-service.mjs --zip
           npm run build:browser-extension
           node scripts/test-workbench-ui.mjs
+          node scripts/test-agent-workflow-ui.mjs
+          node scripts/test-harness-ui.mjs
+          node scripts/test-public-native-ui.mjs
       - name: Verify source and packaged Electron desktop on X11
         run: |
           xvfb-run -a sh -c 'openbox >/tmp/nexus-openbox.log 2>&1 & node scripts/test-linux-desktop.mjs && NEXUS_DESKTOP_EXECUTABLE="$PWD/release/linux-unpacked/nexusmcp-studio" node scripts/test-linux-desktop.mjs && node scripts/test-embedded-webchat.mjs'
@@ -70,5 +74,7 @@ jobs:
             release/NexusMCP-Service.tar.gz
             release/NexusMCP-Browser-Extension.zip
             output/workbench-ui/*.png
+            output/agent-workflow/*.png
+            output/harness-ui/*.png
           if-no-files-found: error
           retention-days: 14

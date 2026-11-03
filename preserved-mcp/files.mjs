@@ -67,11 +67,12 @@ async function atomicWrite(file, content) {
 }
 export function writeText(file, content, expectedHash) {
   return lockedFile(file, async target => {
+    const existed=await fs.stat(target).then(()=>true,error=>{if(error.code==='ENOENT')return false;throw error;});
     const before=await readWhole(target).catch(error=>{if(error.code==='ENOENT')return '';if(!expectedHash&&/2 MB/.test(error.message))return null;throw error;});
     if(expectedHash&&(before===null||fileHash(before)!==expectedHash))throw new Error('文件已变化，请重新读取后修改');
     const changes=before===null?{path:target,addedLines:content.split('\n').length,removedLines:0,approximate:true,lines:[],truncated:true}:fileChanges(before,content,target);
-    if(before!==content)await atomicWrite(target, content);
-    return { ok: true, bytes: Buffer.byteLength(content), hash: fileHash(content),...changes };
+    if(!existed||before!==content)await atomicWrite(target, content);
+    return { ok: true, operation:existed?'modified':'created',unchanged:existed&&before===content, bytes: Buffer.byteLength(content), hash: fileHash(content),...changes };
   });
 }
 export function patchText(file, edits, expectedHash) {
@@ -86,7 +87,7 @@ export function patchText(file, edits, expectedHash) {
     }
     if (Buffer.byteLength(after) > 4 * 1024 * 1024) throw new Error('修改后文件超过 4 MB');
     if(before!==after)await atomicWrite(target, after);
-    return { ok: true, edits: edits.length, ...fileChanges(before,after,target), hash: fileHash(after) };
+    return { ok: true, operation:'modified',edits: edits.length, ...fileChanges(before,after,target), hash: fileHash(after) };
   });
 }
 export async function readMany(files, options) {

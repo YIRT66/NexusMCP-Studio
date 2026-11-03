@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 const { parse } = createRequire(import.meta.url)('../browser-plugin/tool-protocol.js');
 export class BrowserTools {
-  constructor({ replies, tools, call, deliver }) { Object.assign(this,{ replies, tools, call, deliver }); this.rounds = new Map(); }
+  constructor({ replies, tools, call, deliver,questions }) { Object.assign(this,{ replies, tools, call, deliver,questions }); this.rounds = new Map(); }
   async execute(data) {
     const request = this.replies.requests.find(r => r.requestId === data.requestId && r.sessionId === data.sessionId);
     if (!request || request.mode === 'api' || !['sending','waiting','replying'].includes(request.status)) throw new Error('浏览器工具请求已停止或不属于当前任务');
@@ -16,13 +16,15 @@ export class BrowserTools {
     try {
       for (const entry of parsed.calls) {
         if (!['sending','waiting','replying'].includes(request.status)) throw new Error('任务已停止');
+        if(request.purpose==='diagnostic'&&!['client_session','client_reply'].includes(entry.name))throw new Error('连接自检不允许执行其他工具');
         const signature = JSON.stringify([entry.name,entry.args]);
         const prior = state.ids.get(entry.id);
         if (prior && prior.signature !== signature) throw new Error('工具 ID 已用于其他操作');
         if (prior) { results.push(prior.result); continue; }
-        const tool = this.tools().find(t => t.name === entry.name && t.enabled !== false && !['client_reply','client_session'].includes(t.name));
+        const tool = this.tools().find(t => t.name === entry.name && t.enabled !== false);
         if (!tool || request.permission === 'readonly' && !tool.readOnly) throw new Error('当前权限不允许此工具：'+entry.name);
-        const output = await this.call(entry.name,entry.args,request);
+        let output = await this.call(entry.name,{...entry.args,...(['client_reply','ask_user_question'].includes(entry.name)?{requestId:request.requestId,sessionId:request.sessionId}:{})},request);
+        if(entry.name==='ask_user_question'&&!output.isError){const question=JSON.parse(output.content?.find(b=>b.type==='text')?.text||'{}');if(question.status==='pending')output={content:[{type:'text',text:JSON.stringify(await this.questions.wait(question.id))}]};}
         const content = output.content?.filter(b=>b.type==='text').map(b=>b.text).join('\n') || '[工具返回非文本结果]';
         const result = { id:entry.id, name:entry.name, isError:!!output.isError, output:content.length>24000?content.slice(0,24000)+'\n[结果超过浏览器传输限额，请使用分段读取工具]':content };
         state.ids.set(entry.id,{signature,result}); results.push(result);
