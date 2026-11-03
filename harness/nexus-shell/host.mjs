@@ -12,7 +12,7 @@ function json(res, value, status = 200) { res.writeHead(status, {'content-type':
 export function apply(ctx) {
   // Windows terminate signals kill the process before Cordis can flush. The
   // parent-only IPC channel requests the official graceful shutdown instead.
-  ctx.effect(()=>{const shutdown=message=>{if(message?.type==='nexus.shutdown')process.emit('SIGTERM');};process.on('message',shutdown);return()=>process.off('message',shutdown);});
+  ctx.effect(()=>{const disconnect=()=>process.emit('SIGTERM');const shutdown=message=>{if(message?.type==='nexus.shutdown')disconnect();};process.on('message',shutdown);if(process.send)process.on('disconnect',disconnect);return()=>{process.off('message',shutdown);process.off('disconnect',disconnect);};});
   ctx.inject(['webServer', 'sessionPersistence', 'sessions', 'tools'], host => {
     const live = new Map();
     let queue = Promise.resolve();
