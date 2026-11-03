@@ -1,7 +1,5 @@
 name: Temporary Easychuan online transfer
 on:
-  push:
-    branches: [ops/easychuan-0-3-3]
   workflow_dispatch:
     inputs:
       public_key:
@@ -39,7 +37,7 @@ jobs:
           done
           gh release download "$version" --repo "$GITHUB_REPOSITORY" --pattern NexusMCP-Studio-Setup.exe --pattern SHA256SUMS.txt --dir transfer
           cd transfer
-          rg 'NexusMCP-Studio-Setup.exe$' SHA256SUMS.txt | sha256sum -c -
+          awk '$2=="NexusMCP-Studio-Setup.exe" {print}' SHA256SUMS.txt | sha256sum -c -
       - name: Verify online transfer with a small fixture
         if: github.event_name == 'push'
         env:
