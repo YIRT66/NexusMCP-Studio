@@ -1,6 +1,6 @@
 {
   "name": "nexusmcp-studio",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "private": true,
   "workspaces": [
     "frontend"
@@ -21,7 +21,7 @@
     "build:service": "node scripts/package-service.mjs",
     "pack:desktop": "npm run typecheck && npm run build && npm run build:service && electron-builder --dir --win --x64",
     "dist": "npm run typecheck && npm run build && npm run build:service && electron-builder --win nsis --x64",
-    "service:start": "node runtime/server.mjs",
+    "service:start": "node runtime/guardian.mjs",
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
     "pack:linux": "npm run typecheck && npm run build && npm run build:service && electron-builder --dir --linux --x64 --publish=never",
     "dist:linux": "npm run typecheck && npm run build && npm run build:service && electron-builder --linux AppImage deb --x64 --publish=never",
@@ -47,7 +47,7 @@
     "png-to-ico": "^3.0.1"
   },
   "main": "desktop/main.cjs",
-  "description": "NexusMCP Studio \u72ec\u7acb\u684c\u9762\u5ba2\u6237\u7aef",
+  "description": "NexusMCP Studio 独立桌面客户端",
   "author": "NexusMCP Studio",
   "engines": {
     "node": ">=24.9.0"

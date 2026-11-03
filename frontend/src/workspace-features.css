@@ -22,3 +22,6 @@
 .workspace-new-file{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#8fc0a2;border:1px solid var(--border);border-radius:6px;padding:4px 7px;margin:0 5px 7px 0;max-width:100%;overflow:hidden;text-overflow:ellipsis}.git-diff>div{cursor:pointer}.git-diff>div.selected{outline:1px solid var(--muted)}
 
 .session-composer-wrap:has(.task-queue,.task-plan){max-height:65%;overflow-y:auto;scrollbar-width:thin}.conversation-content>.user-question-card{max-height:none}.user-question-card .question-answer{white-space:pre-wrap;overflow-wrap:anywhere}
+.diagnostics-backdrop{position:fixed;inset:0;z-index:20000;background:#0009;display:grid;place-items:center;padding:16px}.diagnostics-dialog{width:min(850px,100%);max-height:90dvh;overflow:auto;padding:24px;border:1px solid #6666;border-radius:16px;background:#202020;color:#eee}.diagnostics-dialog pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:55dvh;overflow:auto;background:#0003;padding:14px;font-size:12px}.diagnostics-dialog footer{display:flex;gap:12px;flex-wrap:wrap}.diagnostics-dialog button{padding:8px 12px;border:1px solid #8886;border-radius:7px;background:transparent;color:inherit;cursor:pointer}
+
+.shell-titlebar > .shell-icon-button{-webkit-app-region:no-drag}

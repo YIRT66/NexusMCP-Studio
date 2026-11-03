@@ -24,19 +24,24 @@ let saveTimer:ReturnType<typeof setTimeout>;
 function cacheState(){const state=useSessionUI.getState();try{localStorage.setItem('nexus.sessions',JSON.stringify({workspaces:state.workspaces,sessions:state.sessions,activeWorkspaceId:state.activeWorkspaceId,activeSessionId:state.activeSessionId}));}catch{}}
 let diskOperation:Promise<void>=Promise.resolve();
 const diskWorkspaces=new Map<string,Workspace>();
+const diskSnapshots=new Map<string,ChatSession>();
+const clientFields=['title','customTitle','workspaceId','goal','planning','permission','modelMode','apiProfileId','mcpProvider','draft','queue','queuePaused','plan','compactionSummary','archived','pinned','parentSessionId'] as const;
+const clientPatch=(before:ChatSession|undefined,after:ChatSession)=>Object.fromEntries(clientFields.filter(field=>!before||JSON.stringify(before[field])!==JSON.stringify(after[field])).map(field=>[field,after[field]]));
+function publishSelection(id:string){if(diskReady)void writePending().then(()=>fetch('/api/client/active',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:id})})).catch(()=>{});}
+
 function writePending(){
  const operation=diskOperation.catch(()=>{}).then(async()=>{
   if(!diskReady)return;
   const state=useSessionUI.getState();
   for(const workspace of state.workspaces){if(diskWorkspaces.get(workspace.id)===workspace)continue;const response=await fetch('/api/workspaces/'+encodeURIComponent(workspace.id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(workspace),signal:AbortSignal.timeout(15000)});if(!response.ok)throw new Error('项目设置保存失败');diskWorkspaces.set(workspace.id,workspace);}
-  for(const session of [...pendingDisk.values()]){const response=await fetch('/api/sessions/'+encodeURIComponent(session.id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(session),signal:AbortSignal.timeout(15000)});if(!response.ok)throw new Error('会话保存失败，草稿仍保留在当前窗口');if(pendingDisk.get(session.id)===session)pendingDisk.delete(session.id);}
+  for(const session of [...pendingDisk.values()]){const payload=diskSnapshots.has(session.id)?clientPatch(diskSnapshots.get(session.id),session):session;if(!Object.keys(payload).length){if(pendingDisk.get(session.id)===session)pendingDisk.delete(session.id);continue;}const response=await fetch('/api/sessions/'+encodeURIComponent(session.id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});if(!response.ok)throw new Error('会话保存失败，草稿仍保留在当前窗口');diskSnapshots.set(session.id,session);if(pendingDisk.get(session.id)===session)pendingDisk.delete(session.id);}
  });diskOperation=operation;return operation;
 }
 function persist(){const current=useSessionUI.getState();for(const session of current.sessions)if(lastDiskSessions.get(session.id)!==session){lastDiskSessions.set(session.id,session);pendingDisk.set(session.id,session);}clearTimeout(saveTimer);saveTimer=setTimeout(()=>{cacheState();void writePending().catch(error=>window.dispatchEvent(new CustomEvent('nexus:persistence-error',{detail:error.message})));},350);}
 export const useSessionUI=create<SessionUI>((set,get)=>({
   workspaces,sessions,activeWorkspaceId:workspaces.some(item=>item.id===saved.activeWorkspaceId)?saved.activeWorkspaceId!:workspaces[0].id,activeSessionId:sessions.some(item=>item.id===saved.activeSessionId)?saved.activeSessionId!:sessions[0].id,
-  createSession:(workspaceId)=>{const target=get().workspaces.find(item=>item.id===workspaceId)?.id||get().activeWorkspaceId;const session=newSession(target);set({sessions:[session,...get().sessions],activeWorkspaceId:target,activeSessionId:session.id,workspaces:get().workspaces.map(item=>item.id===target?{...item,collapsed:false}:item)});persist();return session;},
-  selectSession:id=>{const session=get().sessions.find(item=>item.id===id);if(session){set({activeSessionId:id,activeWorkspaceId:session.workspaceId});if(diskReady)void fetch('/api/sessions/'+encodeURIComponent(id)).then(response=>{if(!response.ok)throw new Error('历史记录读取失败');return response.json();}).then(saved=>{if(get().activeSessionId!==id)return;set({sessions:get().sessions.map(item=>item.id===id?{...saved,historyLoaded:true}:item)});window.dispatchEvent(new CustomEvent('nexus:session-history',{detail:saved}));}).catch(()=>{});persist();}return session;},
+  createSession:(workspaceId)=>{const target=get().workspaces.find(item=>item.id===workspaceId)?.id||get().activeWorkspaceId;const session=newSession(target);set({sessions:[session,...get().sessions],activeWorkspaceId:target,activeSessionId:session.id,workspaces:get().workspaces.map(item=>item.id===target?{...item,collapsed:false}:item)});persist();publishSelection(session.id);return session;},
+  selectSession:id=>{const session=get().sessions.find(item=>item.id===id);if(session){set({activeSessionId:id,activeWorkspaceId:session.workspaceId});if(diskReady)void fetch('/api/sessions/'+encodeURIComponent(id)).then(response=>{if(!response.ok)throw new Error('历史记录读取失败');return response.json();}).then(saved=>{if(get().activeSessionId!==id)return;set({sessions:get().sessions.map(item=>item.id===id?{...saved,historyLoaded:true}:item)});window.dispatchEvent(new CustomEvent('nexus:session-history',{detail:saved}));}).catch(()=>{});persist();publishSelection(id);}return session;},
   addWorkspace:path=>{const existing=get().workspaces.find(item=>item.path===path);if(existing){get().setWorkspace(existing.id);return;}const workspace={id:crypto.randomUUID(),name:path.replace(/[\\/]+$/,'').split(/[\\/]/).at(-1)||path,path};set({workspaces:[...get().workspaces,workspace],activeWorkspaceId:workspace.id});get().createSession();persist();},
   setWorkspace:id=>{if(!get().workspaces.some(item=>item.id===id))return;set({activeWorkspaceId:id});const session=get().sessions.find(item=>item.workspaceId===id);if(session)set({activeSessionId:session.id});else get().createSession();persist();},
   renameWorkspace:(id,name)=>{const trimmed=name.trim();if(!trimmed)return;set({workspaces:get().workspaces.map(item=>item.id===id?{...item,name:trimmed.slice(0,80)}:item)});persist();},
@@ -72,10 +77,18 @@ export async function chooseWorkspace(){
 }
 
 export async function hydrateLocalSessions(){
- const ui=useSessionUI.getState(),response=await fetch('/api/sessions/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({workspaces:ui.workspaces,sessions:ui.sessions,activeWorkspaceId:ui.activeWorkspaceId,activeSessionId:ui.activeSessionId})});
- if(!response.ok)throw new Error('本地会话迁移失败，原浏览器记录已保留');
- const saved=await response.json();if(saved.sessions?.length){const sessions=saved.sessions.map((item:ChatSession)=>({...newSession(item.workspaceId),...item,queuePaused:(item.queue?.length||0)>0?true:item.queuePaused}));const active=sessions.some((s:ChatSession)=>s.id===ui.activeSessionId)?ui.activeSessionId:sessions[0].id;useSessionUI.setState({workspaces:saved.workspaces,sessions,activeSessionId:active,activeWorkspaceId:sessions.find((s:ChatSession)=>s.id===active)!.workspaceId});}
+ const ui=useSessionUI.getState();let response=await fetch('/api/sessions');let saved=await response.json();
+ const legacy=ui.sessions.some(session=>session.messages.length||session.calls.length||session.draft);
+ if(!saved.sessions?.length||legacy&&!diskReady){response=await fetch('/api/sessions/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({workspaces:ui.workspaces,sessions:ui.sessions,activeWorkspaceId:ui.activeWorkspaceId,activeSessionId:ui.activeSessionId})});if(!response.ok)throw new Error('本地会话迁移失败，浏览器记录已保留');saved=await response.json();}
+ if(saved.sessions?.length){const sessions=saved.sessions.map((item:ChatSession)=>({...newSession(item.workspaceId),...item,queuePaused:(item.queue?.length||0)>0?true:item.queuePaused}));const active=sessions.some((s:ChatSession)=>s.id===saved.activeSessionId)?saved.activeSessionId:sessions[0].id;useSessionUI.setState({workspaces:saved.workspaces,sessions,activeSessionId:active,activeWorkspaceId:sessions.find((s:ChatSession)=>s.id===active)!.workspaceId});for(const session of sessions){diskSnapshots.set(session.id,session);lastDiskSessions.set(session.id,session);}}
+ if(!saved.sessions?.length){const workspaces=saved.workspaces?.length?saved.workspaces:[initialWorkspace];useSessionUI.setState({workspaces,sessions:[],activeWorkspaceId:workspaces[0].id,activeSessionId:''});useSessionUI.getState().createSession();}
  diskReady=true;pendingDisk.clear();
+ const active=useSessionUI.getState().activeSessionId;const full=await fetch('/api/sessions/'+encodeURIComponent(active));if(full.ok)applyRemoteSession(await full.json());
+}
+export function applyRemoteSession(saved:ChatSession){
+ const ui=useSessionUI.getState(),dirty=pendingDisk.get(saved.id),baseline=diskSnapshots.get(saved.id);const session={...newSession(saved.workspaceId),...saved,...(dirty?clientPatch(baseline,dirty):{})} as ChatSession;
+ diskSnapshots.set(saved.id,saved);lastDiskSessions.set(saved.id,session);useSessionUI.setState({sessions:ui.sessions.some(s=>s.id===session.id)?ui.sessions.map(s=>s.id===session.id?session:s):[session,...ui.sessions]});cacheState();
+ if(ui.activeSessionId===session.id)window.dispatchEvent(new CustomEvent('nexus:session-history',{detail:session}));
 }
 
 // Native plugin reloads must wait until draft/queue/history writes settle.

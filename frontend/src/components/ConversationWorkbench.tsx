@@ -36,6 +36,7 @@ export function ConversationWorkbench({onOpenModel,onConnect,browserSuspended=fa
   const browserLink=useBrowserLink(session.id);const[openingPage,setOpeningPage]=useState(false);
   const isApi=session.modelMode==='api';const apiProfile=s.apiModels.find(model=>model.id===session.apiProfileId);const apiState=s.apiChats[session.id];const responding=isApi?!!apiState?.busy:browserLink.busy;const canSend=isApi?s.connected&&!!apiProfile&&!responding:browserLink.canSend;
   const updateText=(value:string)=>{setText(value);u.updateSessionId(session.id,{draft:value});};
+  useEffect(()=>setText(session.draft||''),[session.draft,u.activeSessionId]);
   const aiName=aiSites.find(site=>site.id===s.webchat.provider)?.name||'AI';
   useEffect(()=>{if(s.webchat.sessionId===session.id&&s.webchat.provider&&session.modelMode==='mcp')u.updateSessionId(session.id,{mcpProvider:s.webchat.provider});},[s.webchat.provider,s.webchat.sessionId,session.id]);
   useEffect(()=>{if(browserLink.bound&&!browserLink.needsLogin)setError(current=>/客户端会话对应|请先打开|请先完成网页登录/.test(current)?'':current);},[browserLink.bound,browserLink.needsLogin]);

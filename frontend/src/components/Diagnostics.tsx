@@ -1,0 +1,12 @@
+import {useEffect,useState} from 'react';
+import {createPortal} from 'react-dom';
+import {request} from '../connection';
+import {useStudio} from '../store';
+export function Diagnostics(){
+ const fault=useStudio(s=>s.fault),connected=useStudio(s=>s.connected);const[open,setOpen]=useState(false),[logs,setLogs]=useState(''),[error,setError]=useState('');
+ useEffect(()=>{const show=()=>{setOpen(true);};const crash=(event:ErrorEvent|PromiseRejectionEvent)=>{const reason='reason'in event?event.reason:event.error||event.message;void request('/diagnostics/pause',{source:'界面异步异常',message:String(reason?.message||reason),stack:String(reason?.stack||reason)}).catch(()=>{});};window.addEventListener('nexus:diagnostics',show);window.addEventListener('error',crash);window.addEventListener('unhandledrejection',crash);return()=>{window.removeEventListener('nexus:diagnostics',show);window.removeEventListener('error',crash);window.removeEventListener('unhandledrejection',crash);};},[]);
+ useEffect(()=>{if(!connected||!open&&!fault.paused)return;void request<{logs:string}>('/diagnostics').then(data=>setLogs(data.logs)).catch(e=>setError(e.message));},[open,fault.paused,connected]);
+ if(!open&&!fault.paused)return null;
+ const details=[fault.incident?.at,fault.incident?.source,fault.incident?.stack,fault.incident?.logDirectory,logs].filter(Boolean).join('\n\n');
+ return createPortal(<div className="diagnostics-backdrop"><section className="diagnostics-dialog" role="dialog" aria-modal="true" aria-label={fault.paused?'软件已暂停':'运行日志'}><h2>{fault.paused?'软件已暂停运行':'运行日志'}</h2>{fault.paused&&<p>任务已停止。查看错误详情后可手动解除暂停，原任务不会自动重新执行。</p>}<pre tabIndex={0}>{details||'暂无日志'}</pre>{error&&<p role="alert">{error}</p>}<footer><button onClick={()=>void navigator.clipboard.writeText(details).catch(e=>setError(e.message))}>复制详细信息</button><button onClick={()=>{const url=URL.createObjectURL(new Blob([details],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='NexusMCP-diagnostics.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}}>导出日志</button>{fault.paused?<button disabled={!connected} onClick={()=>void request<typeof fault>('/diagnostics/recover',{}).then(data=>{useStudio.getState().set({fault:data});setOpen(false);location.reload();}).catch(e=>setError(e.message))}>手动解除暂停</button>:<button onClick={()=>setOpen(false)}>关闭</button>}</footer></section></div>,document.body);
+}

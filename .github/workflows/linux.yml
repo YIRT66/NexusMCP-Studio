@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      minimal:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,10 +36,12 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix preserved-mcp --omit=dev --no-audit --no-fund
       - name: Install test browser
+        if: ${{ !inputs.minimal }}
         run: |
           npx --no-install playwright-core install --with-deps chromium
           node -e 'require("node:fs").appendFileSync(process.env.GITHUB_ENV, "NEXUS_BROWSER_PATH=" + require("playwright-core").chromium.executablePath() + "\n")'
       - name: Verify source and MCP integration
+        if: ${{ !inputs.minimal }}
         run: |
           npm run typecheck
           npm run build
@@ -46,8 +52,14 @@ jobs:
         env:
           XDG_SESSION_TYPE: x11
       - name: Verify official DSH native plugin compatibility
+        if: ${{ !inputs.minimal }}
         run: |
           NEXUS_DSH_ENGINE_DIR="$PWD/preserved-mcp" node --test runtime/dsh-native.test.mjs
+      - name: Focused synchronization and recovery checks
+        if: ${{ inputs.minimal }}
+        run: |
+          npm run typecheck
+          node --test runtime/sync-notification-faults.test.mjs
       - run: npm run prepare:runtime
       - name: Build Linux service and desktop packages
         run: |
@@ -55,11 +67,15 @@ jobs:
           node runtime/package-smoke.mjs
           node scripts/package-service.mjs --zip
           npm run build:browser-extension
+      - name: Full UI regression
+        if: ${{ !inputs.minimal }}
+        run: |
           node scripts/test-workbench-ui.mjs
           node scripts/test-agent-workflow-ui.mjs
           node scripts/test-harness-ui.mjs
           node scripts/test-public-native-ui.mjs
       - name: Verify source and packaged Electron desktop on X11
+        if: ${{ !inputs.minimal }}
         run: |
           xvfb-run -a sh -c 'openbox >/tmp/nexus-openbox.log 2>&1 & node scripts/test-linux-desktop.mjs && NEXUS_DESKTOP_EXECUTABLE="$PWD/release/linux-unpacked/nexusmcp-studio" node scripts/test-linux-desktop.mjs && node scripts/test-embedded-webchat.mjs'
         env:

@@ -3,6 +3,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      minimal:
+        type: boolean
+        default: false
+        description: Only run focused checks for a small patch
 permissions:
   contents: write
   actions: read
@@ -12,8 +17,12 @@ concurrency:
 jobs:
   linux:
     uses: ./.github/workflows/linux.yml
+    with:
+      minimal: ${{ inputs.minimal || false }}
   windows:
     uses: ./.github/workflows/windows-exe.yml
+    with:
+      minimal: ${{ inputs.minimal || false }}
   publish:
     needs: [linux, windows]
     runs-on: ubuntu-latest

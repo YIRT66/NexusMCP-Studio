@@ -71,7 +71,7 @@ export class DshRuntime {
       };
       child.stdout.on('data', collect); child.stderr.on('data', collect);
       child.once('error', error => { clearTimeout(timer); this.child = null; this.update({ phase: 'error', running: false, error: error.message }); reject(error); });
-      child.once('exit', code => { clearTimeout(timer); if (this.child === child) this.child = null; const error = redact(output).slice(-2500); this.update({ running: false, phase: code === 0 || this.info.phase === 'stopping' ? 'stopped' : 'error', url: '', ...(code && this.info.phase !== 'stopping' ? { error } : {}) }); if (!settled) reject(new Error(error || 'DSH 工作台退出：' + code)); });
+      child.once('exit', code => { clearTimeout(timer);if(this.info.phase!=='stopping')this.publish('runtime.child-exit',{source:'原生插件进程',error:'原生插件进程退出（'+code+'）\n'+redact(output).slice(-6000)}); if (this.child === child) this.child = null; const error = redact(output).slice(-2500); this.update({ running: false, phase: code === 0 || this.info.phase === 'stopping' ? 'stopped' : 'error', url: '', ...(code && this.info.phase !== 'stopping' ? { error } : {}) }); if (!settled) reject(new Error(error || 'DSH 工作台退出：' + code)); });
     });
   }
   async stop() {

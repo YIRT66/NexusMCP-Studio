@@ -6,6 +6,7 @@ import { useStudio } from './store';
 import { ConversationWorkbench } from './components/ConversationWorkbench';
 import {useSessionUI,chooseWorkspace} from './session-ui';
 import {UIExtensions} from './components/UIExtensions';
+import {Diagnostics} from './components/Diagnostics';
 import {PreviewHost} from './components/FilePreview';
 const LiveDesktop=lazy(()=>import('./components/LiveDesktop').then(module=>({default:module.LiveDesktop})));
 const CyberTerminal=lazy(()=>import('./components/CyberTerminal').then(module=>({default:module.CyberTerminal})));
@@ -27,10 +28,10 @@ const inertWhen=(inactive:boolean)=>(element:HTMLElement|null)=>{if(element)elem
 export function App() {
   const s = useStudio();
   const autoMcpStarted=useRef(false);
-  useEffect(()=>{if(!s.connected||autoMcpStarted.current)return;autoMcpStarted.current=true;void ensureMcpStarted().catch(error=>{autoMcpStarted.current=false;s.set({error:'MCP 自动启动失败：'+error.message});});},[s.connected]);
+  useEffect(()=>{if(!s.connected||s.fault.paused||autoMcpStarted.current)return;autoMcpStarted.current=true;void ensureMcpStarted().catch(error=>{autoMcpStarted.current=false;s.set({error:'MCP 自动启动失败：'+error.message});});},[s.connected,s.fault.paused]);
   const ui=useSessionUI();
   useEffect(()=>{if(!s.connected||!s.webchat.transport)return;let active=true;void request<WebchatState>('/webchat/activate',{sessionId:ui.activeSessionId}).then(state=>{if(active)applyWebchatState(state);}).catch(error=>{if(active&&useStudio.getState().webchat.transport!=='extension')s.set({error:error.message});});return()=>{active=false;};},[ui.activeSessionId,s.connected,s.webchat.transport]);
-  useEffect(()=>{const hydrate=(event:Event)=>{const session=(event as CustomEvent).detail;if(useSessionUI.getState().activeSessionId===session.id)useStudio.getState().set({messages:session.messages,calls:session.calls});};window.addEventListener('nexus:session-history',hydrate);return()=>window.removeEventListener('nexus:session-history',hydrate);},[]);
+  useEffect(()=>{const hydrate=(event:Event)=>{const session=(event as CustomEvent).detail;if(useSessionUI.getState().activeSessionId===session.id){const state=useStudio.getState();const newer=(incoming:any[],current:any[],time:(item:any)=>number)=>{const map=new Map(incoming.map(item=>[item.id,item]));for(const item of current){const old=map.get(item.id);if(!old||time(item)>time(old))map.set(item.id,item);}return [...map.values()];};state.set({messages:newer(session.messages,state.messages,m=>m.updatedAt||m.completedAt||m.createdAt||0),calls:newer(session.calls,state.calls,c=>c.endedAt||c.startedAt||0)});}};window.addEventListener('nexus:session-history',hydrate);return()=>window.removeEventListener('nexus:session-history',hydrate);},[]);
   useEffect(()=>{const workspace=ui.workspaces.find(w=>w.id===ui.activeWorkspaceId)?.path;if(s.connected&&workspace)void request('/workbench/watch',{workspace}).catch(()=>{});},[s.connected,ui.activeWorkspaceId]);
   const [page, setPage] = useState<Page>('chat');
   const visited=useRef(new Set<Page>());visited.current.add(page);
@@ -82,7 +83,7 @@ export function App() {
   const moreActive = page !== 'chat' && page !== 'tools';
 
   return <div className="plain-app client-app desktop-shell" data-native={!!window.nexusDesktop}><UIExtensions/><PreviewHost/>
-    <header className="shell-titlebar">
+    <Diagnostics/><header className="shell-titlebar"><button className="shell-icon-button" title="运行日志" aria-label="运行日志" onClick={()=>window.dispatchEvent(new Event('nexus:diagnostics'))}><TerminalSquare size={14}/></button>
       <button className="shell-sidebar-toggle" aria-label="切换侧边栏" title="切换侧边栏" aria-expanded={sidebar} onClick={() => setSidebar(!sidebar)}><PanelLeft size={16} /></button>
       {(s.preview||import.meta.env.VITE_WEB_PREVIEW==='true')&&<span className="shell-preview-notice" title={s.preview?'独立预览实例 · 示例对话与实际工具记录':'网页版界面预览 · 电脑控制及 MCP 功能不可用'}>{s.preview?'独立预览 · 示例数据':'网页版界面预览'}</span>}
       <button className={'mcp-launch-trigger '+(s.service.phase==='running'?'running':'')} onClick={()=>setMcpOpen(true)} aria-label="启动 MCP 服务">{s.service.phase==='starting'?<LoaderCircle size={13} className="spin"/>:<Plug size={13}/>}<span>{s.service.phase==='running'?'MCP 服务已启动':s.service.phase==='starting'?'MCP 正在启动':'启动 MCP 服务'}</span></button>

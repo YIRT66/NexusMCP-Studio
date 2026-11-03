@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      minimal:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -35,11 +39,17 @@ jobs:
         with:
           arch: x64
       - name: Check native memory and DLL loading
+        if: ${{ !inputs.minimal }}
         run: node --test runtime/process-control.test.mjs
       - name: Check standalone browser bridge tests
+        if: ${{ !inputs.minimal }}
         run: node --test runtime/browser-extension.test.mjs runtime/webchat-relay.test.mjs
       - name: Verify workspace tools and Studio extensions
+        if: ${{ !inputs.minimal }}
         run: node --test runtime/files.test.mjs runtime/workspace.test.mjs runtime/studio-host.test.mjs runtime/session-store.test.mjs runtime/user-questions.test.mjs runtime/browser-verification.test.mjs runtime/workbench.test.mjs
+      - name: Focused synchronization and recovery checks
+        if: ${{ inputs.minimal }}
+        run: node --test runtime/sync-notification-faults.test.mjs
       - name: Bundle Windows Node.js and cloudflared for the local service
         shell: pwsh
         run: |

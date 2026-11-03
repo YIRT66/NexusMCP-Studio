@@ -5,7 +5,7 @@ const { pathToFileURL } = require('node:url');
 const {spawn}=require('node:child_process');
 const {WebChat}=require('./webchat.cjs');
 let runtimeProcess,runtimeUrl='http://127.0.0.1:8765',webchat;
-async function startRuntime(){let savedPort=0;const portFile=path.join(app.getPath('userData'),'service-port.json');try{savedPort=JSON.parse(fs.readFileSync(portFile,'utf8')).port||0}catch{}if(savedPort){const probe=require('node:net').createServer();savedPort=await new Promise(resolve=>{probe.once('error',()=>resolve(0));probe.listen(savedPort,'127.0.0.1',()=>probe.close(()=>resolve(savedPort)))})}const base=app.isPackaged?path.join(process.resourcesPath,'service'):root;const node=require(path.join(base,'preserved-mcp/platform.cjs')).runtimePaths(path.join(base,'preserved-mcp')).node;runtimeProcess=spawn(node,[path.join(base,'runtime/server.mjs')],{cwd:base,windowsHide:true,stdio:['ignore','pipe','pipe','ipc'],env:{...process.env,NEXUS_PORT:String(savedPort),NEXUS_DATA_DIR:path.join(app.getPath('userData'),'service'),NEXUS_DESKTOP_ORIGIN:appOrigin}});runtimeProcess.stdout.on('data',c=>console.log(c.toString().trim()));runtimeProcess.stderr.on('data',c=>console.error(c.toString().trim()));runtimeProcess.on('message',async message=>{if(message.type!=='webchat.command')return;try{if(!webchat)throw new Error('客户端浏览器尚未就绪');const result=await webchat.command(message.operation,message.data);if(runtimeProcess.connected)runtimeProcess.send({type:'webchat.result',id:message.id,result});}catch(e){if(runtimeProcess.connected)runtimeProcess.send({type:'webchat.result',id:message.id,error:e.message})}});await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('本地服务启动超时')),15000);runtimeProcess.on('message',m=>{if(m.type==='runtime.ready'){clearTimeout(timer);runtimeUrl=m.url;fs.writeFileSync(portFile,JSON.stringify({port:m.port}));resolve();}});runtimeProcess.once('error',e=>{clearTimeout(timer);reject(e)});runtimeProcess.once('exit',code=>{clearTimeout(timer);reject(new Error('本地服务退出 '+code))})});}
+async function startRuntime(){let savedPort=0;const portFile=path.join(app.getPath('userData'),'service-port.json');try{savedPort=JSON.parse(fs.readFileSync(portFile,'utf8')).port||0}catch{}if(savedPort){const probe=require('node:net').createServer();savedPort=await new Promise(resolve=>{probe.once('error',()=>resolve(0));probe.listen(savedPort,'127.0.0.1',()=>probe.close(()=>resolve(savedPort)))})}const base=app.isPackaged?path.join(process.resourcesPath,'service'):root;const node=require(path.join(base,'preserved-mcp/platform.cjs')).runtimePaths(path.join(base,'preserved-mcp')).node;runtimeProcess=spawn(node,[path.join(base,'runtime/guardian.mjs')],{cwd:base,windowsHide:true,stdio:['ignore','pipe','pipe','ipc'],env:{...process.env,NEXUS_PORT:String(savedPort),NEXUS_DATA_DIR:path.join(app.getPath('userData'),'service'),NEXUS_DESKTOP_ORIGIN:appOrigin}});runtimeProcess.stdout.on('data',c=>console.log(c.toString().trim()));runtimeProcess.stderr.on('data',c=>{logStartup('runtime:stderr',{text:c.toString().slice(-12000)});console.error(c.toString().trim());});let ready=false;runtimeProcess.on('exit',(code,signal)=>{if(ready&&!closingServer)dialog.showErrorBox('NexusMCP 已暂停',`本地服务守护进程已退出：${code??signal}\n日志目录：${path.join(app.getPath('userData'),'service','logs')}`);});runtimeProcess.on('message',async message=>{if(message.type!=='webchat.command')return;try{if(!webchat)throw new Error('客户端浏览器尚未就绪');const result=await webchat.command(message.operation,message.data);if(runtimeProcess.connected)runtimeProcess.send({type:'webchat.result',id:message.id,result});}catch(e){if(runtimeProcess.connected)runtimeProcess.send({type:'webchat.result',id:message.id,error:e.message})}});await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('本地服务启动超时')),15000);runtimeProcess.on('message',m=>{if(m.type==='runtime.ready'){clearTimeout(timer);ready=true;runtimeUrl=m.url;fs.writeFileSync(portFile,JSON.stringify({port:m.port}));resolve();}});runtimeProcess.once('error',e=>{clearTimeout(timer);reject(e)});runtimeProcess.once('exit',code=>{clearTimeout(timer);reject(new Error('本地服务退出 '+code))})});}
 
 const development = !app.isPackaged && process.argv.includes('--dev');
 const root = path.resolve(__dirname, '..');
@@ -15,12 +15,13 @@ let devServer;
 let closingServer = false;
 let rendererOrigin = appOrigin;
 const startupLog=path.join(app.getPath('userData'),'desktop-startup.log');
-try{fs.mkdirSync(path.dirname(startupLog),{recursive:true});fs.writeFileSync(startupLog,'');}catch{}
+try{fs.mkdirSync(path.dirname(startupLog),{recursive:true});if(fs.existsSync(startupLog))fs.copyFileSync(startupLog,startupLog+'.previous');fs.writeFileSync(startupLog,'',{mode:0o600});}catch{}
 function logStartup(stage,details={}){
   const line=JSON.stringify({at:new Date().toISOString(),stage,...details});
   try{fs.appendFileSync(startupLog,line+'\n');}catch{}
 }
 logStartup('main',{pid:process.pid,electron:process.versions.electron,development});
+let mainFailed=false;function fatalMain(reason){if(mainFailed)return;mainFailed=true;const error=reason instanceof Error?reason:new Error(String(reason));logStartup('main:exception',{message:error.message,stack:error.stack});if(runtimeProcess?.connected)runtimeProcess.send({type:'runtime.pause',error:error.stack||error.message});dialog.showErrorBox('NexusMCP 异常，运行已暂停',(error.stack||error.message)+'\n日志：'+startupLog);app.quit();}process.on('uncaughtException',fatalMain);process.on('unhandledRejection',fatalMain);
 
 app.setName('NexusMCP Studio');
 if(process.env.NEXUS_TEST_USER_DATA)app.setPath('userData',process.env.NEXUS_TEST_USER_DATA);
@@ -182,6 +183,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     logStartup('app:ready');
     await startRuntime();
+    app.on('render-process-gone',(_event,_contents,details)=>{if(closingServer)return;runtimeProcess?.connected&&runtimeProcess.send({type:'runtime.pause',error:'界面进程退出：'+JSON.stringify(details)});logStartup('renderer:crash',details);void dialog.showMessageBox({type:'error',title:'NexusMCP 已暂停运行',message:'界面进程异常退出，任务已暂停。',detail:JSON.stringify(details,null,2)+'\n日志：'+path.join(app.getPath('userData'),'service','logs'),buttons:['重新加载界面','打开日志目录'],defaultId:0}).then(({response})=>{if(response===0)mainWindow?.reload();else void shell.openPath(path.join(app.getPath('userData'),'service','logs'));});});
     logStartup('runtime:ready',{url:runtimeUrl});
     ipcMain.handle('desktop:reveal-path',async(event,target)=>{if(event.sender!==mainWindow?.webContents||typeof target!=='string'||!path.isAbsolute(target))throw new Error('路径无效');const resolved=await fs.promises.realpath(target);const stat=await fs.promises.stat(resolved);if(stat.isDirectory()){const error=await shell.openPath(resolved);if(error)throw new Error(error);}else shell.showItemInFolder(resolved);return true;});
     ipcMain.handle('desktop:get-runtime',event=>event.sender===mainWindow?.webContents?runtimeUrl:null);
@@ -277,6 +279,6 @@ if (!app.requestSingleInstanceLock()) {
 
 function failStartup(error) {
   console.error(error);
-  dialog.showErrorBox('NexusMCP Studio 启动失败', error.message);
+  dialog.showErrorBox('NexusMCP Studio 启动失败', (error.stack||error.message)+'\n日志：'+startupLog);
   app.quit();
 }

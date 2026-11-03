@@ -2,6 +2,7 @@ import {create} from 'zustand';
 import type {DshState,ApiModelProfile,ApiChatState,Settings,Mode,View,Phase,Tool,ToolCall,Message,Approval,Frame,ServerEntry,ServiceState,ServiceLog,HistoryEntry,WebchatState} from './types';
 import {useSessionUI} from './session-ui';
 interface State {
+ fault:{paused:boolean;incident:null|{id:string;at:string;source:string;message:string;stack:string;logDirectory:string}};
  workspaceChanges:{id:string;workspace:string;path:string;operation:string;source:string;at:number}[];
  questions:import('./types').UserQuestionSet[];
  preview?:{sessionId:string;workspace:string};
@@ -18,7 +19,7 @@ interface State {
  terminalId:string|null;terminalVersion:number;terminalChunks:string[];set:(patch:Partial<State>)=>void;receive:(event:{type:string;data:any})=>void;
 }
 export const useStudio=create<State>((set,get)=>({
- workspaceChanges:[],questions:[],browserInstall:{phase:'idle',progress:''},extensions:[],
+ fault:{paused:false,incident:null},workspaceChanges:[],questions:[],browserInstall:{phase:'idle',progress:''},extensions:[],
  publicAccess:{phase:'stopped',url:'',error:'',startedAt:0,connections:0},remote:false,
  dsh:{installed:false,running:false,phase:'uninstalled',version:'0.2.1-rc.5',error:'',progress:'',url:''},apiModels:[],apiChats:{},
  platform:'',terminalShells:['default'],
@@ -28,6 +29,7 @@ export const useStudio=create<State>((set,get)=>({
  service:{phase:'stopped',url:'',localUrl:'',error:'',lastClient:'',clientAt:0,startedAt:0,localOnly:false},
  tools:[],calls:[],logs:[],history:[],messages:[],approvals:[],servers:[],frame:null,cursor:null,metrics:null,error:'',terminalId:null,terminalVersion:0,terminalChunks:[],set,
  receive:({type,data})=>{
+  if(type==='runtime.fault'){const recovering=get().fault.paused&&!data.paused;set({fault:data,phase:'idle'});if(recovering)location.reload();return;}
   if(type==='harness.reload'){window.dispatchEvent(new Event('nexus:harness-reload'));return;}
   if(type==='workspace.change'){set({workspaceChanges:[...get().workspaceChanges.filter(c=>c.id!==data.id),data].slice(-100)});return;}
   if(type==='session.plan'){useSessionUI.getState().updateSessionId(data.sessionId,{plan:data.plan});return;}

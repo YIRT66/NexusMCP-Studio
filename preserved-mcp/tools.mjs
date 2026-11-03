@@ -82,7 +82,7 @@ export function registerTools(server, audit = () => {}) {
   tool('project_memory_read','读取当前项目共享记忆，不跨项目。',{},async()=>text(await extensionRequest('client.memory.read','',callContext())),true);
   tool('project_memory_write','保存当前项目的持久记忆，记录已验证事实、用户偏好和未完成事项。',{notes:z.string().max(20000)},async a=>text(await extensionRequest('client.memory.write','',{...a,...callContext()})),true);
   tool('session_history_read','按需读取当前会话的本地历史，offset/limit 分页。',{offset:z.number().int().min(0).default(0),limit:z.number().int().min(1).max(40).default(20)},async a=>text(await extensionRequest('client.history','',{...a,...callContext()})),true);
-  tool('client_reply','把给用户的回复通过 MCP 直接发送到 NexusMCP 软件聊天栏。使用用户消息中的 requestId/sessionId；text 是 Markdown 正文。短回复一次 done=true；分段可 mode=append，sequence 按 1、2、3 递增防重试重复，最后 done=true。成功结果仅确认已送达。',{
+  tool('client_reply','把给用户的回复通过 MCP 直接发送到 NexusMCP 软件聊天栏。使用用户消息中的 requestId/sessionId；text 是 Markdown 正文。短回复一次 done=true；分段可 mode=append，sequence 按 1、2、3 递增防重试重复，最后 done=true。没有待回复任务时，也可指定 sessionId 主动发送通知、进度或结果；分段续传使用返回的 requestId。成功结果仅确认已送达。',{
     requestId:z.string().max(150).optional(),sessionId:z.string().max(150).optional(),text:z.string().max(200000).default(''),mode:z.enum(['replace','append']).default('replace'),done:z.boolean().default(true),sequence:z.number().int().positive().optional(),
   },async args=>text(await extensionRequest('client.reply','',args)));
   tool('system_read', '直接读取系统信息，无需截图或执行终端命令。overview 返回 CPU/内存/网络接口；windows 返回全部窗口与前台标识；processes/services/disks/network 返回进程、服务、磁盘、TCP 连接。支持分页、进程 PID 与名称筛选。', {

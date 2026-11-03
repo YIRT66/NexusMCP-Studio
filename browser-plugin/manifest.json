@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NexusMCP 网页聊天助手",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "支持无原生 MCP 的 AI 网页通过扩展调用本机工具，并回传 Markdown 和组件回复。",
   "permissions": [
     "activeTab",

@@ -40,11 +40,11 @@ await fs.copyFile(path.join(root,'docs/WORKSPACE-FEATURES.md'),path.join(target,
 await fs.copyFile(path.join(root,'docs/HARNESS-COMPATIBILITY.md'),path.join(target,'docs/HARNESS-COMPATIBILITY.md'));
 await fs.copyFile(path.join(root,'docs/EXTENSIONS-API.md'),path.join(target,'插件与技能接口.md'));
 if(process.platform==='win32'){
-await fs.writeFile(path.join(target,'START-SERVICE.bat'),'@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\npreserved-mcp\\runtime\\node.exe runtime\\server.mjs\r\npause\r\n');
+await fs.writeFile(path.join(target,'START-SERVICE.bat'),'@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\npreserved-mcp\\runtime\\node.exe runtime\\guardian.mjs\r\npause\r\n');
 await fs.writeFile(path.join(target,'START-MCP.bat'),'@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0preserved-mcp"\r\nruntime\\node.exe server.mjs\r\npause\r\n');
 }else{
  const launcher=(script)=>'#!/usr/bin/env bash\nset -euo pipefail\ncd -- "$(dirname -- "$0")"\nexec ./preserved-mcp/runtime/node '+script+'\n';
- await fs.writeFile(path.join(target,'start-service.sh'),launcher('runtime/server.mjs'),{mode:0o755});
+ await fs.writeFile(path.join(target,'start-service.sh'),launcher('runtime/guardian.mjs'),{mode:0o755});
  await fs.writeFile(path.join(target,'start-mcp.sh'),launcher('preserved-mcp/server.mjs'),{mode:0o755});
  await fs.chmod(path.join(target,'preserved-mcp/runtime/node'),0o755);
  await fs.chmod(path.join(target,'preserved-mcp/bin/cloudflared'),0o755);

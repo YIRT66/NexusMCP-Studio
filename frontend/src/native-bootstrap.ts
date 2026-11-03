@@ -1,6 +1,7 @@
 export async function mountNativeShell(){
  const response=await fetch('/api/harness/start',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(90000)});
  if(!response.ok)throw new Error((await response.json()).error||'原生插件运行时启动失败');
+ const status=await response.json();if(status.paused){await import('./standalone-bootstrap');return;}
  const html=await fetch('/api/harness/document').then(response=>{if(!response.ok)throw new Error('原生界面资源未就绪');return response.text();});
  document.getElementById('root')?.replaceChildren();
  const documentValue=new DOMParser().parseFromString(html,'text/html');
