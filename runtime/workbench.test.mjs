@@ -9,7 +9,7 @@ import {WorkspaceWatch} from './workspace-watch.mjs';
 import {deltaFor, applyDelta, foldRecords} from '../harness/nexus-shell/session-records.mjs';
 test('Git 审阅拒绝过期撤销，工作树共享项目记忆且保持独立文件',async t=>{
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-git-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
- const repo=path.join(directory,'repo');await fs.mkdir(repo);await git(repo,['init']);await git(repo,['config','user.name','Fixture']);await git(repo,['config','user.email','fixture@example.invalid']);
+ const repo=path.join(directory,'repo');await fs.mkdir(repo);await git(repo,['init']);await git(repo,['config','core.autocrlf','false']);await git(repo,['config','user.name','Fixture']);await git(repo,['config','user.email','fixture@example.invalid']);
  const file=path.join(repo,'a.txt');await fs.writeFile(file,'base\n');await gitAction(repo,{action:'stage',file},directory);await gitAction(repo,{action:'commit',message:'base'},directory);
  await fs.writeFile(file,'first edit\n');const preview=await gitDiff(repo,file);assert.match(preview.text,/\+first edit/);
  await fs.writeFile(file,'new edit\n');await assert.rejects(gitAction(repo,{action:'discard',file,expectedHash:preview.hash},directory),/重新预览/);assert.equal(await fs.readFile(file,'utf8'),'new edit\n');
