@@ -12,11 +12,11 @@ try{
  await page.goto('https://easychuan.cn/',{waitUntil:'domcontentloaded'});await page.locator('input[type=file]').first().waitFor({state:'attached'});await page.locator('input[type=file]').first().setInputFiles(file);
  const sent=page.waitForResponse(response=>new URL(response.url()).pathname==='/files/direct'&&response.request().method()==='POST');
  await page.getByRole('button',{name:/^发在线$|Send online/i}).first().click();const response=await sent;const result=await response.json();assert.ok(response.ok()&&result.fetch_code,JSON.stringify(result));
- const code=String(result.fetch_code);await page.waitForFunction(code=>{const area=document.querySelector('#fileFetchcodeArea');return area&&(area.innerText.includes(code)||[...area.querySelectorAll('input')].some(input=>input.value.includes(code)));},code);
+ const code=String(result.fetch_code);await page.locator('#fileFetchcodeArea').waitFor({state:'visible'});
  const url='https://easychuan.cn/r/'+encodeURIComponent(code)+'?t=nf';
  // Verify the real receiver path and received bytes before advertising a link.
  const receiver=await browser.newContext({locale:'zh-CN',acceptDownloads:true});const receive=await receiver.newPage();receive.setDefaultTimeout(90000);await receive.goto(url,{waitUntil:'domcontentloaded'});await receive.getByText(path.basename(file),{exact:false}).first().waitFor();
- const started=receive.waitForEvent('download',{timeout:180000});await receive.getByRole('button',{name:/下载|Download/i}).first().click();const download=await started;const received=path.join(output,'received-check.exe');await download.saveAs(received);assert.equal(await hash(received),expected,'易传接收文件校验失败');await fs.rm(received);await receiver.close();
+ const started=receive.waitForEvent('download',{timeout:180000});await receive.getByText(path.basename(file),{exact:false}).first().click();const download=await started;const received=path.join(output,'received-check.exe');await download.saveAs(received);assert.equal(await hash(received),expected,'易传接收文件校验失败');await fs.rm(received);await receiver.close();
  if(process.env.TRANSFER_SMOKE==='1'){console.log('在线直传接收与 SHA256 校验通过。');await browser.close();process.exit(0);}
  const expiresAt=new Date(Date.now()+minutes*60000).toISOString();const key=createPublicKey({key:Buffer.from(process.env.TRANSFER_PUBLIC_KEY,'base64'),format:'der',type:'spki'});await fs.writeFile(path.join(output,'online-link.enc'),publicEncrypt({key,oaepHash:'sha256'},Buffer.from(JSON.stringify({url,expiresAt,filename:path.basename(file),sha256:expected,bytes:(await fs.stat(file)).size}))));
  console.log('在线链接已创建，接收端下载与 SHA256 校验通过；发送端保持在线 60 分钟。');
