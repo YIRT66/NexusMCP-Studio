@@ -24,7 +24,7 @@ test('外部命令创建的空文件也发出创建通知',async t=>{
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nexus-watch-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
  let resolve;const change=new Promise(r=>resolve=r);const watcher=new WorkspaceWatch((_type,value)=>resolve(value));t.after(()=>watcher.close());await watcher.attach(directory);
  const file=path.join(directory,'empty.txt');await fs.writeFile(file,'');
- const result=await Promise.race([change,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(new Error('未收到文件通知')),3000);timer.unref();})]);assert.equal(result.path,file);assert.equal(result.operation,'created');assert.equal(result.source,'workspace');
+ const result=await Promise.race([change,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(new Error('未收到文件通知')),3000);timer.unref();})]);assert.equal(result.path,await fs.realpath(file));assert.equal(result.operation,'created');assert.equal(result.source,'workspace');
 });
 test('原生日志增量保存不重复整份历史，回放保持顺序和删除',()=>{
  const first={id:'s',title:'original',messages:Array.from({length:1000},(_,i)=>({id:'m'+i,content:'x'.repeat(100)})),calls:[]};
