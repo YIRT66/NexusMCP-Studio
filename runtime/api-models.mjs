@@ -78,7 +78,7 @@ export class ApiModels {
     };
     for (let round = 0; round < 12; round++) {
       controller.signal.throwIfAborted();
-      const available = this.tools().filter(tool => tool.enabled !== false && !['client_reply', 'client_session'].includes(tool.name) && (data.permission !== 'readonly' || tool.readOnly));
+      const available = this.tools().filter(tool => tool.enabled !== false && !['client_reply', 'client_session', 'client_reply_start'].includes(tool.name) && (data.permission !== 'readonly' || tool.readOnly));
       const catalog = available.slice(0, 100).map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description.slice(0, 4000), parameters: tool.inputSchema || { type: 'object', properties: {} } } }));
       const response = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', ...(profile.apiKey ? { authorization: 'Bearer ' + profile.apiKey } : {}) }, body: JSON.stringify({ model: profile.model, messages, stream: true, ...reasoningOptions, ...(catalog.length ? { tools: catalog } : {}) }), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180000)]), redirect: 'error' });
       if (!response.ok) { let detail = ''; try { const error = await response.json(); detail = String(error.error?.message || error.message || '').slice(0, 350); } catch {} throw new Error(`API 请求失败（HTTP ${response.status}）${detail ? '：' + detail : ''}`); }

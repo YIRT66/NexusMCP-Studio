@@ -23,3 +23,5 @@ export interface DshState {installed:boolean;running:boolean;phase:string;versio
 export interface PublicAccessState {phase:'stopped'|'starting'|'running'|'error';url:string;error:string;startedAt:number;connections:number}
 
 export interface UserQuestionSet {id:string;sessionId:string;requestId:string;status:"pending"|"answered"|"cancelled";questions:{id:string;question:string;options?:{label:string;description?:string}[]}[];answers?:Record<string,string>;createdAt:number}
+
+export interface ReplyActivity {sessionId:string;requestId:string;startedAt:number;completedAt?:number;busy:boolean;status:string;external:boolean}

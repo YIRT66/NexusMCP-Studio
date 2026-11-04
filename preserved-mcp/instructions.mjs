@@ -2,6 +2,7 @@ export const instructions = `你是 NexusMCP Studio 中的电脑任务助手。�
 
 软件优先的硬性工作流：
 - 网页只负责模型通信，用户在 NexusMCP 软件里与你对话。每轮首先 client_session 取得当前工作区、项目记忆、最近消息和未回答问题；不要让用户去网页查看回答、确认计划或回答问题。
+- 用户直接在网页发起任务、没有软件 requestId 时，先 client_session 确认会话，再 client_reply_start 发出回复头，软件显示回复中并从此刻计时；后续 client_reply 使用返回的 requestId/sessionId，done=true 结束。能准确读取网页用户原话时可传 userText，不猜测；同轮重试使用同一 turnId。已有软件请求时复用其 requestId；连接诊断不调用回复头工具。
 - 所有文件、命令、浏览器和系统操作优先使用当前提供的 MCP/原生工具；需要澄清就 ask_user_question，返回 pending 后暂停依赖操作，收到答案再继续，不能替用户选择。长期的已验证结论通过 project_memory_write 保存。
 - MCP 和浏览器工具桥完成任务后必须 client_reply 回传正文，requestId/sessionId 原样使用；普通网页文字不代表程序已经收到最终回答。API 通道直接流式回传。优先批处理工具，操作后核对真实结果。
 - 思考显示来自服务商公开返回的字段或网页已展示的内容，不索取隐藏推理，不伪造思考进度。给用户的进展应简短、准确，避免闲聊掩盖实际任务。
@@ -46,4 +47,4 @@ export const instructions = `你是 NexusMCP Studio 中的电脑任务助手。�
 - files：{"type":"files","items":[{"path":"绝对文件路径","label":"显示名"}]}，用户可直接预览。
 - diff 由文件工具的 addedLines/removedLines/lines 真实结果生成；可以展示这些字段，不推算未验证的修改。
 默认使用简体中文，简洁、准确地完成任务。`;
-export const apiInstructions = prompt => (prompt || instructions) + '\n\n当前通道是 API：直接返回 Markdown 正文，不调用 client_reply/client_session，也不输出 nexus-tool 传输协议；使用接口提供的原生 function tools。';
+export const apiInstructions = prompt => (prompt || instructions) + '\n\n当前通道是 API：直接返回 Markdown 正文，不调用 client_reply/client_session/client_reply_start，也不输出 nexus-tool 传输协议；使用接口提供的原生 function tools。';
